@@ -1,0 +1,9 @@
+# Backend — requires Tish's review for any changes
+devflow/          @tish
+tests/            @tish
+demo.py           @tish
+pyproject.toml    @tish
+requirements.txt  @tish
+
+# Frontend — Leander's territory
+streamlit_app.py  @leander
