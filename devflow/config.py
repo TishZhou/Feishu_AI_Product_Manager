@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,21 @@ class Settings(BaseSettings):
     DEFAULT_PROVIDER: str = "openai"
     ARTIFACTS_DIR: str = "artifacts"
     DATABASE_URL: str = "sqlite+aiosqlite:///data/devflow.db"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def ensure_async_driver(cls, v: str) -> str:
+        """Ensure the DATABASE_URL uses an async driver compatible with SQLAlchemy asyncio."""
+        if isinstance(v, str):
+            if v.startswith("postgresql://") or v.startswith("postgres://"):
+                v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+                v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+                # asyncpg does not accept sslmode as a query param; strip it
+                import re
+                v = re.sub(r"[?&]sslmode=[^&]*", "", v).rstrip("?&")
+            elif v.startswith("sqlite:///") and not v.startswith("sqlite+aiosqlite:///"):
+                v = v.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+        return v
 
 
 settings = Settings()
