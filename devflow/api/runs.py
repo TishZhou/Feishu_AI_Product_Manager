@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
+import asyncio
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from devflow.core.background import task_manager
+from devflow.core.log_bus import log_bus
 from devflow.core.orchestrator import orchestrator
 from devflow.core.state_machine import RunState
 from devflow.db.engine import get_session
@@ -74,6 +77,34 @@ async def list_artifacts(run_id: str, session: AsyncSession = Depends(get_sessio
     stmt = select(Artifact).where(Artifact.run_id == run_id).order_by(Artifact.created_at)
     rows = (await session.execute(stmt)).scalars().all()
     return list(rows)
+
+
+@router.get("/runs/{run_id}/logs/stream")
+async def stream_run_logs(run_id: str, request: Request, session: AsyncSession = Depends(get_session)):
+    """Server-Sent Events endpoint that streams real-time log entries for a run."""
+    await _get_run_or_404(run_id, session)
+
+    async def event_generator():
+        # Send a comment to establish the connection and disable buffering
+        yield ": connected\n\n"
+        try:
+            async for entry in log_bus.subscribe(run_id):
+                if await request.is_disconnected():
+                    break
+                data = entry.to_json()
+                yield f"data: {data}\n\n"
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/artifacts/{artifact_id}/content", response_class=PlainTextResponse)

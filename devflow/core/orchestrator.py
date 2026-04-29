@@ -11,6 +11,7 @@ logger = logging.getLogger("devflow.orchestrator")
 
 from devflow.artifacts.store import ArtifactStore
 from devflow.agents.base import AgentContext
+from devflow.core.log_bus import log_bus
 from devflow.core.pipeline_definition import STAGE_REGISTRY, StageDefinition, stages_from
 from devflow.core.state_machine import RunState, StageState
 from devflow.db.engine import AsyncSessionLocal
@@ -43,6 +44,7 @@ class PipelineOrchestrator:
         self._pause_events[run_id] = asyncio.Event()
         self._pause_events[run_id].set()  # not paused initially
         self._cp_decisions[run_id] = {}
+        log_bus.register(run_id)
 
     def pause(self, run_id: str) -> None:
         ev = self._pause_events.get(run_id)
@@ -72,6 +74,7 @@ class PipelineOrchestrator:
         self._cp_events.pop(run_id, None)
         self._pause_events.pop(run_id, None)
         self._cp_decisions.pop(run_id, None)
+        log_bus.close(run_id)
 
     # ── Main execution loop ────────────────────────────────────────────────────
 
@@ -120,6 +123,9 @@ class PipelineOrchestrator:
             (pipeline.description or "")[:120],
         )
 
+        log_bus.emit(run_id, "info", "", f"流水线启动  provider={pipeline.provider}  model={pipeline.model or 'default'}")
+        log_bus.emit(run_id, "info", "", f"任务: {(pipeline.description or pipeline.name or '')[:120]}")
+
         artifact_store = ArtifactStore(run_id)
         await self._set_run_status(run_id, RunState.RUNNING)
 
@@ -136,13 +142,16 @@ class PipelineOrchestrator:
             pause_ev = self._pause_events.get(run_id)
             if pause_ev and not pause_ev.is_set():
                 logger.info("[RUN %s] ⏸  paused — waiting for resume", run_id[:8])
+                log_bus.emit(run_id, "info", stage_def.key, "⏸ 流水线已暂停，等待恢复...")
                 await pause_ev.wait()
                 logger.info("[RUN %s] ▶  resumed", run_id[:8])
+                log_bus.emit(run_id, "info", stage_def.key, "▶ 流水线已恢复")
 
             # ── Check if terminated ──────────────────────────────────────────
             current_status = await self._get_run_status(run_id)
             if current_status == RunState.TERMINATED:
                 logger.info("[RUN %s] ⏹  terminated", run_id[:8])
+                log_bus.emit(run_id, "fail", "", "流水线已终止")
                 return
 
             # ── Update current stage ─────────────────────────────────────────
@@ -180,6 +189,7 @@ class PipelineOrchestrator:
 
             # ── Execute agent ─────────────────────────────────────────────────
             logger.info("[RUN %s] ▶ stage=%s  attempt=%d", run_id[:8], stage_def.key, attempt)
+            log_bus.emit(run_id, "start", stage_def.key, f"开始执行阶段  attempt={attempt}")
             start_time = _now()
             try:
                 agent_class = stage_def.get_agent_class()
@@ -188,6 +198,7 @@ class PipelineOrchestrator:
             except Exception as e:
                 duration = (_now() - start_time).total_seconds()
                 logger.error("[RUN %s] ✗ stage=%s  error=%s", run_id[:8], stage_def.key, e)
+                log_bus.emit(run_id, "fail", stage_def.key, f"执行异常: {str(e)[:200]}")
                 await self._fail_stage(stage_result_id, str(e), duration)
                 await self._set_run_status(run_id, RunState.FAILED, error=str(e))
                 self.cleanup(run_id)
@@ -197,6 +208,7 @@ class PipelineOrchestrator:
 
             if not result.success:
                 logger.error("[RUN %s] ✗ stage=%s  agent_error=%s", run_id[:8], stage_def.key, result.error)
+                log_bus.emit(run_id, "fail", stage_def.key, f"Agent 返回失败: {(result.error or '')[:200]}")
                 await self._fail_stage(stage_result_id, result.error or "Agent failed", duration)
                 await self._set_run_status(run_id, RunState.FAILED, error=result.error or "")
                 self.cleanup(run_id)
@@ -208,9 +220,11 @@ class PipelineOrchestrator:
                 path = artifact_store.save(filename, content)
                 await self._register_artifact(run_id, stage_def.key, filename, str(path), content)
                 saved_filenames.append(filename)
+                log_bus.emit(run_id, "info", stage_def.key, f"产出文件: {filename}  ({len(content.encode())} 字节)")
 
             logger.info("[RUN %s] ✓ stage=%s  artifacts=%s  %.1fs",
                         run_id[:8], stage_def.key, saved_filenames, duration)
+            log_bus.emit(run_id, "success", stage_def.key, f"阶段完成  耗时 {duration:.1f}s  产出 {len(saved_filenames)} 个文件")
             await self._complete_stage(stage_result_id, saved_filenames, duration)
 
             # ── Auto-apply patch after code_generation ────────────────────────
@@ -223,6 +237,7 @@ class PipelineOrchestrator:
                 cp_id, retry_key = await self._create_checkpoint(run_id, cp_number, stage_def)
                 await self._set_run_status(run_id, RunState.WAITING_FOR_APPROVAL)
                 logger.info("[RUN %s] ⏸  CHECKPOINT %d — waiting for human approval", run_id[:8], cp_number)
+                log_bus.emit(run_id, "info", stage_def.key, f"⏸ 到达检查点 #{cp_number}，等待人工审核...")
 
                 # Wait for human decision
                 cp_event = self._get_cp_event(run_id, cp_number)
@@ -236,6 +251,7 @@ class PipelineOrchestrator:
                     # Fetch actual retry_stage from DB
                     retry_stage_key = await self._get_cp_retry_stage(cp_id, stage_def.checkpoint_default_retry)
                     logger.info("[RUN %s] ↩  retrying from stage=%s", run_id[:8], retry_stage_key)
+                    log_bus.emit(run_id, "reject", stage_def.key, f"检查点被拒绝，从 {retry_stage_key} 重新开始")
                     # Mark subsequent stages as rejected
                     await self._reject_stages_from(run_id, retry_stage_key)
                     # Reset stage list from retry point
@@ -246,11 +262,13 @@ class PipelineOrchestrator:
                     cp_event.clear()
                     continue
                 else:
+                    log_bus.emit(run_id, "info", stage_def.key, f"✓ 检查点 #{cp_number} 审核通过，继续执行")
                     await self._set_run_status(run_id, RunState.RUNNING)
                     cp_event.clear()
 
             i += 1
 
+        log_bus.emit(run_id, "success", "", "🎉 流水线全部阶段完成！")
         await self._set_run_status(run_id, RunState.COMPLETED)
         self.cleanup(run_id)
 

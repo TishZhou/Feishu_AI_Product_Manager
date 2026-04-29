@@ -73,6 +73,8 @@ class BaseAgent(ABC):
             tool_dispatcher=dispatcher if tools else None,
             json_mode=self.json_mode(),
             max_tokens=self.max_tokens(),
+            run_id=ctx.run_id,
+            stage_key=ctx.stage_key,
         )
 
         return self.parse_response(raw_response, ctx)

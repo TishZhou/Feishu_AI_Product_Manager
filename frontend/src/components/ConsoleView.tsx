@@ -190,7 +190,7 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
           {/* Log stream */}
           <div className="h-[44%] shrink-0"
             style={{ background: 'rgba(0,0,0,0.3)' }}>
-            <LogStream stages={stages} runStatus={run.status} />
+            <LogStream stages={stages} runStatus={run.status} runId={runId} />
           </div>
         </div>
       </div>
