@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,3 +74,15 @@ async def list_artifacts(run_id: str, session: AsyncSession = Depends(get_sessio
     stmt = select(Artifact).where(Artifact.run_id == run_id).order_by(Artifact.created_at)
     rows = (await session.execute(stmt)).scalars().all()
     return list(rows)
+
+
+@router.get("/artifacts/{artifact_id}/content", response_class=PlainTextResponse)
+async def get_artifact_content(artifact_id: str, session: AsyncSession = Depends(get_session)):
+    artifact = await session.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(404, "Artifact not found")
+    from pathlib import Path
+    path = Path(artifact.file_path)
+    if not path.exists():
+        raise HTTPException(404, "Artifact file not found on disk")
+    return PlainTextResponse(path.read_text(encoding="utf-8", errors="replace"))

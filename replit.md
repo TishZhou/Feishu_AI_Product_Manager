@@ -4,9 +4,9 @@ An AI-driven development workflow engine that automates the entire software deve
 
 ## Architecture
 
-- **Backend**: FastAPI (Python) running on port 8000 via Uvicorn
-- **Frontend**: Streamlit UI on port 5000 (the main user-facing interface)
-- **Database**: PostgreSQL (via Replit's managed database, using asyncpg async driver)
+- **Backend**: FastAPI (Python) on port 8000 via Uvicorn (localhost binding)
+- **Frontend**: React (Vite + TypeScript) on port 5000 (the main user-facing interface)
+- **Database**: PostgreSQL via Replit's managed database (asyncpg async driver)
 - **AI Integration**: OpenAI Python SDK (supports OpenAI and ByteDance Volcano/Ark engine)
 
 ## Project Structure
@@ -15,15 +15,36 @@ An AI-driven development workflow engine that automates the entire software deve
 devflow/
   api/          - FastAPI route handlers (checkpoints, pipelines, runs, meta)
   agents/       - AI agent implementations for each pipeline stage
-  artifacts/    - ArtifactStore module (filesystem-backed artifact storage per run)
+  artifacts/    - ArtifactStore module (filesystem-backed per-run artifact storage)
   core/         - Pipeline orchestration, state machine, background tasks
   db/           - SQLAlchemy models and async engine setup
   providers/    - LLM routing logic (OpenAI and Volcano Engine)
   schemas/      - Pydantic request/response models
   tools/        - Utility functions (repo search, patch apply, test runner)
-  config.py     - Pydantic-settings configuration (auto-converts DB URL to async driver)
-  main.py       - FastAPI app entry point
-streamlit_app.py - Streamlit frontend UI
+  config.py     - Pydantic-settings (auto-converts DB URL to async driver)
+  main.py       - FastAPI app entry point with CORS middleware
+
+frontend/
+  src/
+    App.tsx              - Root component (setup view ↔ console view state)
+    main.tsx             - Entry point with TanStack Query provider
+    components/
+      SetupView.tsx      - Pipeline creation form
+      ConsoleView.tsx    - Active run console layout
+      PipelineGraph.tsx  - ReactFlow 7-stage DAG visualizer
+      StageDetail.tsx    - Current stage info + artifact chips
+      LogStream.tsx      - Terminal-style synthetic log stream
+      CheckpointModal.tsx - Frosted glass approval modal with Monaco Editor
+      ArtifactViewer.tsx - Monaco Editor slide-in panel
+    hooks/
+      useDevFlow.ts      - TanStack Query hooks (2s polling for active runs)
+    lib/
+      api.ts             - Axios-based API client for all endpoints
+    types/
+      api.ts             - TypeScript interfaces + STAGES constant
+  vite.config.ts         - Vite with Tailwind v4 plugin, port 5000, allowedHosts: true
+
+streamlit_app.py - Legacy Streamlit UI (kept for reference, not used in main workflow)
 ```
 
 ## Pipeline Stages
@@ -38,13 +59,21 @@ streamlit_app.py - Streamlit frontend UI
 
 ## Workflows
 
-- **Start application** — Streamlit frontend on port 5000 (webview)
-- **Backend API** — FastAPI backend on port 8000 (console)
+- **Start application** — React/Vite frontend on port 5000 (webview): `cd frontend && npm run dev`
+- **Backend API** — FastAPI backend on port 8000 (console): `uvicorn devflow.main:app --host localhost --port 8000 --reload`
+
+## Added API Endpoints
+
+- `GET /api/artifacts/{artifact_id}/content` — Returns artifact file content as plain text (for Monaco Editor display)
+- CORS middleware enabled on the backend for all origins (React frontend at port 5000)
 
 ## Key Notes
 
-- The `devflow/config.py` automatically converts `postgresql://` URLs to `postgresql+asyncpg://` and strips `sslmode` query params (not supported by asyncpg)
-- The `devflow/artifacts/` package was created during setup — it provides `ArtifactStore` for per-run filesystem artifact storage
-- API keys (OPENAI_API_KEY, VOLCANO_API_KEY) must be set as environment variables or in a `.env` file to use AI features
-- Artifacts are stored in the `artifacts/` directory (gitignored)
+- `devflow/config.py` auto-converts `postgresql://` to `postgresql+asyncpg://` and strips `sslmode` params
+- `devflow/artifacts/` package provides `ArtifactStore` for per-run filesystem artifact storage
+- API keys (OPENAI_API_KEY, VOLCANO_API_KEY) must be set as environment variables or in a `.env` file
+- Artifacts stored in `artifacts/` directory (gitignored)
 - Database is PostgreSQL via Replit's managed DB
+- Tailwind CSS v4 used (no tailwind.config.js — uses @tailwindcss/vite plugin)
+- Frontend uses Inter for body text, JetBrains Mono for code/terminal displays
+- Design system: bg-slate-950 base, #3370ff running/active, #00b42a success, #f59e0b warning, #ef4444 error

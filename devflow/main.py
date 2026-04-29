@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from devflow.api import checkpoints, meta, pipelines, runs
 from devflow.db.engine import create_tables
@@ -101,6 +102,14 @@ app = FastAPI(
     description="AI-driven development workflow engine — from requirement to code delivery.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(pipelines.router, prefix="/api")
