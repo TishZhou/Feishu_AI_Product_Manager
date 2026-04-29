@@ -135,19 +135,7 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
           <button
             onClick={() => approve.mutate({ id: checkpoint.id, decided_by: '人工审核', reason: '方案通过' })}
             disabled={approve.isPending}
-            className="w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2.5 transition-all disabled:opacity-50 mb-5"
-            style={{
-              background: 'linear-gradient(135deg, #00b42a 0%, #009923 100%)',
-              boxShadow: '0 0 24px rgba(0,180,42,0.3), 0 4px 16px rgba(0,0,0,0.3)',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 36px rgba(0,180,42,0.5), 0 4px 20px rgba(0,0,0,0.4)'
-              ;(e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 24px rgba(0,180,42,0.3), 0 4px 16px rgba(0,0,0,0.3)'
-              ;(e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'
-            }}
+            className="btn-approve w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2.5 disabled:opacity-50 mb-5"
           >
             <Check className="w-5 h-5" strokeWidth={2.5} />
             批准并继续
@@ -222,22 +210,7 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
             <button
               onClick={() => reject.mutate({ id: checkpoint.id, decided_by: '人工审核', reason, retry_stage_key: retryStage })}
               disabled={!reason || reject.isPending}
-              className="w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{
-                background: 'rgba(239,68,68,0.12)',
-                border: '1px solid rgba(239,68,68,0.25)',
-                color: '#f87171',
-              }}
-              onMouseEnter={e => {
-                if (reason) {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.2)'
-                  ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 16px rgba(239,68,68,0.2)'
-                }
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.12)'
-                ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
-              }}
+              className="btn-reject w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <X className="w-4 h-4" />
               拒绝并重试

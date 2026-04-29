@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Editor } from '@monaco-editor/react'
 import { X, FileCode2 } from 'lucide-react'
 import type { Artifact } from '../types/api'
+import { STAGES } from '../types/api'
 import { apiClient } from '../lib/api'
 
 interface ArtifactViewerProps {
@@ -73,21 +74,14 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                 <div className="min-w-0">
                   <p className="text-white font-mono text-sm truncate">{artifact.filename}</p>
                   <p className="text-slate-500 text-[11px] font-mono">
-                    {(artifact.size_bytes / 1024).toFixed(1)} KB · {artifact.stage_key}
+                    {(artifact.size_bytes / 1024).toFixed(1)} KB · {STAGES.find(s => s.key === artifact.stage_key)?.label ?? artifact.stage_key}
                   </p>
                 </div>
               </div>
 
               <button
                 onClick={onClose}
-                className="p-2 rounded-lg text-slate-500 hover:text-white transition-all shrink-0 ml-4"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'
-                }}
+                className="btn-close p-2 rounded-lg text-slate-500 shrink-0 ml-4"
               >
                 <X className="w-4 h-4" />
               </button>

@@ -132,21 +132,7 @@ export function StageDetail({ stages, artifacts, onSelectArtifact }: StageDetail
               <button
                 key={artifact.id}
                 onClick={() => onSelectArtifact(artifact)}
-                className="group flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-mono text-slate-300 transition-all"
-                style={{
-                  background: 'rgba(51,112,255,0.06)',
-                  border: '1px solid rgba(51,112,255,0.15)',
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(51,112,255,0.12)'
-                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(51,112,255,0.35)'
-                  ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 12px rgba(51,112,255,0.15)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(51,112,255,0.06)'
-                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(51,112,255,0.15)'
-                  ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
-                }}
+                className="artifact-chip flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-mono text-slate-300"
               >
                 <FileCode2 className="w-3.5 h-3.5 text-[#3370ff]" />
                 <span className="text-xs">{artifact.filename}</span>

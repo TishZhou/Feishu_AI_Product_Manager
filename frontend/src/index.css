@@ -175,6 +175,50 @@ code, pre, .mono {
   transform: translateY(0);
 }
 
+/* ── Hover utility classes (replace inline event handlers) ── */
+.artifact-chip {
+  background: rgba(51,112,255,0.06);
+  border: 1px solid rgba(51,112,255,0.15);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.artifact-chip:hover {
+  background: rgba(51,112,255,0.14);
+  border-color: rgba(51,112,255,0.38);
+  box-shadow: 0 0 12px rgba(51,112,255,0.18);
+}
+
+.btn-close {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: background 0.15s, color 0.15s;
+}
+.btn-close:hover {
+  background: rgba(255,255,255,0.09);
+  color: #fff;
+}
+
+.btn-approve {
+  background: linear-gradient(135deg, #00b42a 0%, #009923 100%);
+  box-shadow: 0 0 24px rgba(0,180,42,0.3), 0 4px 16px rgba(0,0,0,0.3);
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+.btn-approve:hover:not(:disabled) {
+  box-shadow: 0 0 36px rgba(0,180,42,0.5), 0 4px 20px rgba(0,0,0,0.4);
+  transform: translateY(-1px);
+}
+.btn-approve:active { transform: translateY(0); }
+
+.btn-reject {
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: #f87171;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.btn-reject:hover:not(:disabled) {
+  background: rgba(239,68,68,0.2);
+  box-shadow: 0 0 16px rgba(239,68,68,0.2);
+}
+
 /* ── Custom Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
