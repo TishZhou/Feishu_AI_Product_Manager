@@ -2,7 +2,7 @@ import axios from 'axios'
 import type { Pipeline, PipelineCreate, Run, StageResult, Artifact, Checkpoint } from '../types/api'
 
 export const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: '',
   headers: { 'Content-Type': 'application/json' },
 })
 
