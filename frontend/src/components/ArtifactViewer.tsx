@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Editor } from '@monaco-editor/react'
-import { X } from 'lucide-react'
+import { X, FileCode2 } from 'lucide-react'
 import type { Artifact } from '../types/api'
 import { apiClient } from '../lib/api'
 
@@ -15,7 +15,7 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
 
   useEffect(() => {
     if (artifact) {
-      setContent('Loading...')
+      setContent('加载中...')
       apiClient.getArtifactContent(artifact).then(setContent)
     }
   }, [artifact])
@@ -28,6 +28,7 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
     if (filename.endsWith('.md')) return 'markdown'
     if (filename.endsWith('.css')) return 'css'
     if (filename.endsWith('.html')) return 'html'
+    if (filename.endsWith('.patch') || filename.endsWith('.diff')) return 'diff'
     return 'plaintext'
   }
 
@@ -35,32 +36,64 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
     <AnimatePresence>
       {artifact && (
         <>
+          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-40"
+            style={{ background: 'rgba(3,7,18,0.6)', backdropFilter: 'blur(8px)' }}
           />
+
+          {/* Panel */}
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed inset-y-0 right-0 z-50 w-[800px] max-w-[90vw] bg-[#1e1e1e] border-l border-white/10 shadow-2xl flex flex-col"
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+            className="fixed inset-y-0 right-0 z-50 w-[820px] max-w-[92vw] flex flex-col"
+            style={{
+              background: '#0d1117',
+              borderLeft: '1px solid rgba(255,255,255,0.07)',
+              boxShadow: '-20px 0 80px rgba(0,0,0,0.6), -1px 0 0 rgba(51,112,255,0.1)',
+            }}
           >
-            <div className="h-14 shrink-0 border-b border-white/10 flex items-center justify-between px-6 bg-[#2d2d2d]">
-              <div>
-                <h3 className="text-white font-mono text-sm">{artifact.filename}</h3>
-                <p className="text-slate-400 text-xs font-mono">{(artifact.size_bytes / 1024).toFixed(1)} KB • {artifact.stage_key}</p>
+            {/* Header */}
+            <div className="h-14 shrink-0 flex items-center justify-between px-5"
+              style={{
+                background: '#161b22',
+                borderBottom: '1px solid rgba(255,255,255,0.05)',
+              }}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-1.5 rounded-lg shrink-0"
+                  style={{ background: 'rgba(51,112,255,0.12)', border: '1px solid rgba(51,112,255,0.2)' }}>
+                  <FileCode2 className="w-4 h-4 text-[#3370ff]" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-white font-mono text-sm truncate">{artifact.filename}</p>
+                  <p className="text-slate-500 text-[11px] font-mono">
+                    {(artifact.size_bytes / 1024).toFixed(1)} KB · {artifact.stage_key}
+                  </p>
+                </div>
               </div>
+
               <button
                 onClick={onClose}
-                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-2 rounded-lg text-slate-500 hover:text-white transition-all shrink-0 ml-4"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'
+                }}
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Monaco Editor */}
             <div className="flex-1">
               <Editor
                 height="100%"
@@ -70,9 +103,12 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                 options={{
                   readOnly: true,
                   minimap: { enabled: true },
-                  fontSize: 14,
+                  fontSize: 13,
+                  lineHeight: 20,
                   wordWrap: 'on',
                   scrollBeyondLastLine: false,
+                  padding: { top: 16 },
+                  renderLineHighlight: 'gutter',
                 }}
               />
             </div>

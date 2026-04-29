@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Play, Pause, Square, Activity, Clock } from 'lucide-react'
+import { Play, Pause, Square, Activity, Clock, ChevronLeft } from 'lucide-react'
 import { useRun, useRunStages, useRunActions, useRunArtifacts, useRunCheckpoints } from '../hooks/useDevFlow'
 import { PipelineGraph } from './PipelineGraph'
 import { StageDetail } from './StageDetail'
@@ -13,14 +13,34 @@ interface ConsoleViewProps {
   onBack: () => void
 }
 
-const statusColors: Record<RunStatus, string> = {
-  created: 'bg-slate-500',
+const STATUS_LABEL: Record<RunStatus, string> = {
+  created: '已创建',
+  running: '运行中',
+  waiting_for_approval: '待审核',
+  paused: '已暂停',
+  completed: '已完成',
+  failed: '已失败',
+  terminated: '已终止',
+}
+
+const STATUS_STYLE: Record<RunStatus, string> = {
+  created: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+  running: 'bg-[#3370ff]/15 text-[#6699ff] border-[#3370ff]/30',
+  waiting_for_approval: 'bg-[#f59e0b]/15 text-[#f59e0b] border-[#f59e0b]/30',
+  paused: 'bg-slate-400/15 text-slate-300 border-slate-400/30',
+  completed: 'bg-[#00b42a]/15 text-[#00d032] border-[#00b42a]/30',
+  failed: 'bg-[#ef4444]/15 text-[#f87171] border-[#ef4444]/30',
+  terminated: 'bg-[#ef4444]/15 text-[#f87171] border-[#ef4444]/30',
+}
+
+const STATUS_DOT: Record<RunStatus, string> = {
+  created: 'bg-slate-400',
   running: 'bg-[#3370ff] animate-pulse',
-  waiting_for_approval: 'bg-[#f59e0b]',
+  waiting_for_approval: 'bg-[#f59e0b] animate-pulse',
   paused: 'bg-slate-400',
   completed: 'bg-[#00b42a]',
   failed: 'bg-[#ef4444]',
-  terminated: 'bg-[#ef4444]'
+  terminated: 'bg-[#ef4444]',
 }
 
 export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
@@ -28,11 +48,10 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
   const { data: stages = [] } = useRunStages(runId)
   const { data: artifacts = [] } = useRunArtifacts(runId)
   const { data: checkpoints = [] } = useRunCheckpoints(runId)
-  
+
   const { pause, resume, terminate } = useRunActions()
 
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null)
-  
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
@@ -57,67 +76,120 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
 
   const activeCheckpoint = checkpoints.find(c => c.status === 'waiting')
   const showCheckpointModal = run.status === 'waiting_for_approval' && activeCheckpoint
-
   const totalStageDuration = stages.reduce((acc, s) => acc + (s.duration_seconds || 0), 0)
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden">
+    <div className="h-screen w-screen flex flex-col bg-[#030712] overflow-hidden bg-grid">
+      {/* Ambient top glow */}
+      <div className="absolute top-0 left-0 right-0 h-[1px] z-20"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(51,112,255,0.6), rgba(124,58,237,0.4), transparent)' }} />
+
       {/* Header */}
-      <header className="h-16 shrink-0 bg-white/5 backdrop-blur-md border-b border-white/10 px-6 flex items-center justify-between z-10 relative">
-        <div className="flex items-center gap-4">
-          <Activity className="w-5 h-5 text-[#3370ff]" />
-          <h1 className="text-lg font-semibold text-white tracking-tight">DevFlow Engine</h1>
-          <div className="h-4 w-px bg-white/10 mx-2" />
-          <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-white/5">
-            <div className={`w-2 h-2 rounded-full ${statusColors[run.status]}`} />
-            <span className="text-xs font-mono text-slate-300 uppercase">Run #{run.run_number}</span>
+      <header className="h-14 shrink-0 relative z-10 flex items-center justify-between px-5"
+        style={{
+          background: 'linear-gradient(180deg, rgba(3,7,18,0.95) 0%, rgba(3,7,18,0.85) 100%)',
+          backdropFilter: 'blur(24px)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          boxShadow: '0 1px 0 rgba(51,112,255,0.12), 0 4px 20px rgba(0,0,0,0.4)',
+        }}
+      >
+        {/* Left */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 text-slate-500 hover:text-white transition-colors mr-1 group"
+          >
+            <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+          </button>
+
+          <div className="p-1.5 rounded-lg"
+            style={{ background: 'rgba(51,112,255,0.15)', border: '1px solid rgba(51,112,255,0.25)' }}>
+            <Activity className="w-4 h-4 text-[#3370ff]" />
+          </div>
+
+          <span className="text-sm font-semibold text-white tracking-tight">DevFlow Engine</span>
+
+          <div className="w-px h-4 bg-white/10 mx-1" />
+
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono ${STATUS_STYLE[run.status]}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[run.status]}`} />
+            {STATUS_LABEL[run.status]}
+            <span className="text-current/50 ml-1">#{run.run_number}</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-4 font-mono text-xs text-slate-400 bg-black/40 px-4 py-2 rounded-lg border border-white/5">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              <span>Elapsed: {formatTime(elapsed)}</span>
+        {/* Right */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 font-mono text-xs text-slate-500 px-3 py-1.5 rounded-lg"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="flex items-center gap-1.5 text-slate-400">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{formatTime(elapsed)}</span>
             </div>
             <div className="w-px h-3 bg-white/10" />
-            <div>Stages: {formatTime(totalStageDuration)}</div>
+            <div className="text-slate-500">阶段 {formatTime(totalStageDuration)}</div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {run.status === 'running' && (
-              <button onClick={() => pause.mutate(run.id)} className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors" title="Pause">
-                <Pause className="w-4 h-4" />
+              <button
+                onClick={() => pause.mutate(run.id)}
+                title="暂停"
+                className="p-2 rounded-lg text-slate-400 hover:text-white transition-colors"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+              >
+                <Pause className="w-3.5 h-3.5" />
               </button>
             )}
             {run.status === 'paused' && (
-              <button onClick={() => resume.mutate(run.id)} className="p-2 bg-[#3370ff]/20 hover:bg-[#3370ff]/30 text-[#3370ff] rounded-lg transition-colors" title="Resume">
-                <Play className="w-4 h-4" />
+              <button
+                onClick={() => resume.mutate(run.id)}
+                title="继续"
+                className="p-2 rounded-lg text-[#3370ff] hover:text-white transition-colors"
+                style={{ background: 'rgba(51,112,255,0.15)', border: '1px solid rgba(51,112,255,0.25)' }}
+              >
+                <Play className="w-3.5 h-3.5" />
               </button>
             )}
             {['running', 'paused', 'waiting_for_approval'].includes(run.status) && (
-              <button onClick={() => terminate.mutate(run.id)} className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors" title="Terminate">
-                <Square className="w-4 h-4" />
+              <button
+                onClick={() => terminate.mutate(run.id)}
+                title="终止"
+                className="p-2 rounded-lg text-[#ef4444] hover:text-white transition-colors"
+                style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}
+              >
+                <Square className="w-3.5 h-3.5" />
               </button>
             )}
-            <button onClick={onBack} className="ml-4 text-xs text-slate-400 hover:text-white transition-colors">Exit</button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Graph */}
-        <div className="w-1/3 border-r border-white/10 bg-black/20 flex flex-col relative z-0">
+      {/* Main content */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left panel: pipeline graph */}
+        <div className="w-[300px] shrink-0 flex flex-col relative z-0"
+          style={{
+            background: 'rgba(0,0,0,0.25)',
+            borderRight: '1px solid rgba(255,255,255,0.05)',
+          }}>
+          <div className="px-4 pt-4 pb-2">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">流水线进度</p>
+          </div>
           <PipelineGraph stages={stages} runStatus={run.status} />
         </div>
 
-        {/* Right Panel */}
-        <div className="w-2/3 flex flex-col relative z-0">
-          <div className="h-1/2 border-b border-white/10 p-6 overflow-y-auto">
+        {/* Right panel */}
+        <div className="flex-1 flex flex-col relative z-0 overflow-hidden">
+          {/* Stage detail */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-5"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             <StageDetail stages={stages} artifacts={artifacts} onSelectArtifact={setSelectedArtifact} />
           </div>
-          <div className="h-1/2 bg-black/40">
+
+          {/* Log stream */}
+          <div className="h-[44%] shrink-0"
+            style={{ background: 'rgba(0,0,0,0.3)' }}>
             <LogStream stages={stages} runStatus={run.status} />
           </div>
         </div>
@@ -127,9 +199,9 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
         <CheckpointModal checkpoint={activeCheckpoint} artifacts={artifacts} />
       )}
 
-      <ArtifactViewer 
-        artifact={selectedArtifact} 
-        onClose={() => setSelectedArtifact(null)} 
+      <ArtifactViewer
+        artifact={selectedArtifact}
+        onClose={() => setSelectedArtifact(null)}
       />
     </div>
   )

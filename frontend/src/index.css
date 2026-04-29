@@ -3,42 +3,60 @@
 @import "tailwindcss";
 
 :root {
-  --primary: 221 83% 53%; /* #3370ff */
-  --success: 134 100% 35%; /* #00b42a */
-  --warning: 38 92% 50%; /* #f59e0b */
-  --danger: 0 84% 60%; /* #ef4444 */
-  --background: 222 84% 5%; /* #020617 slate-950 */
+  --primary: #3370ff;
+  --primary-glow: rgba(51, 112, 255, 0.35);
+  --success: #00b42a;
+  --success-glow: rgba(0, 180, 42, 0.3);
+  --warning: #f59e0b;
+  --warning-glow: rgba(245, 158, 11, 0.35);
+  --danger: #ef4444;
+  --danger-glow: rgba(239, 68, 68, 0.3);
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shine: rgba(255, 255, 255, 0.06);
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
+html, body, #root {
+  height: 100%;
   margin: 0;
-  background-color: #020617;
+}
+
+body {
+  background-color: #030712;
   color: #f1f5f9;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', 'PingFang SC', 'Noto Sans SC', sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 code, pre, .mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
 }
 
-.react-flow__edge-path {
-  stroke-width: 2;
+/* ── Animated background blobs ── */
+@keyframes blob-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.05); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+
+@keyframes blob-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, 30px) scale(1.08); }
+  66% { transform: translate(25px, -35px) scale(0.93); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
 }
 
 @keyframes flow-dash {
-  to {
-    stroke-dashoffset: -20;
-  }
-}
-
-.flow-edge-animated {
-  stroke-dasharray: 8 4;
-  animation: flow-dash 1s linear infinite;
+  to { stroke-dashoffset: -20; }
 }
 
 @keyframes blink {
@@ -46,22 +64,129 @@ code, pre, .mono {
   50% { opacity: 0; }
 }
 
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.6; box-shadow: 0 0 12px var(--primary-glow); }
+  50% { opacity: 1; box-shadow: 0 0 24px var(--primary-glow), 0 0 48px var(--primary-glow); }
+}
+
+@keyframes ping-1 {
+  75%, 100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes ping-2 {
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes ping-3 {
+  75%, 100% { transform: scale(3.0); opacity: 0; }
+}
+
+/* ── Utility classes ── */
+.blob-1 {
+  animation: blob-drift 18s ease-in-out infinite;
+}
+.blob-2 {
+  animation: blob-drift-2 22s ease-in-out infinite;
+}
+
+.flow-edge-animated {
+  stroke-dasharray: 8 4;
+  animation: flow-dash 0.8s linear infinite;
+}
+
 .animate-blink {
   animation: blink 1s step-end infinite;
 }
 
-/* Custom Scrollbar */
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-ping-1 {
+  animation: ping-1 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.animate-ping-2 {
+  animation: ping-2 1.6s cubic-bezier(0, 0, 0.2, 1) infinite 0.2s;
+}
+.animate-ping-3 {
+  animation: ping-3 1.6s cubic-bezier(0, 0, 0.2, 1) infinite 0.4s;
+}
+
+/* ── Glass panels ── */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-panel-deep {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-input {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.glass-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(51, 112, 255, 0.12), inset 0 1px 0 rgba(255,255,255,0.05);
+  outline: none;
+}
+
+/* ── Grid overlay ── */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── ReactFlow overrides ── */
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__background {
+  background-color: transparent !important;
+}
+
+/* ── Shimmer button ── */
+.btn-shimmer {
+  background: linear-gradient(
+    135deg,
+    #3370ff 0%,
+    #5a8fff 45%,
+    #3370ff 50%,
+    #2355cc 100%
+  );
+  background-size: 300% auto;
+  transition: background-position 0.4s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+.btn-shimmer:hover {
+  background-position: right center;
+  box-shadow: 0 0 24px rgba(51,112,255,0.5), 0 4px 16px rgba(0,0,0,0.3);
+  transform: translateY(-1px);
+}
+.btn-shimmer:active {
+  transform: translateY(0);
+}
+
+/* ── Custom Scrollbar ── */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.02);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.16);
 }

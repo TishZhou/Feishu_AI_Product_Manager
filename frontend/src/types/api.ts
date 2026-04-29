@@ -89,13 +89,13 @@ export interface Checkpoint {
 }
 
 export const STAGES = [
-  { key: 'requirement_analysis', label: 'Requirement Analysis', index: 1 },
-  { key: 'solution_architecture', label: 'Architecture Design', index: 2 },
-  { key: 'detailed_spec', label: 'Detailed Spec', index: 3 },
-  { key: 'code_generation', label: 'Code Generation', index: 4 },
-  { key: 'test_generation', label: 'Test Generation', index: 5 },
-  { key: 'code_review', label: 'Code Review', index: 6 },
-  { key: 'delivery', label: 'Delivery', index: 7 },
+  { key: 'requirement_analysis', label: '需求分析', index: 1 },
+  { key: 'solution_architecture', label: '架构设计', index: 2 },
+  { key: 'detailed_spec', label: '详细规格', index: 3 },
+  { key: 'code_generation', label: '代码生成', index: 4 },
+  { key: 'test_generation', label: '测试生成', index: 5 },
+  { key: 'code_review', label: '代码审查', index: 6 },
+  { key: 'delivery', label: '交付打包', index: 7 },
 ] as const
 
 export const STAGE_KEYS = STAGES.map((s) => s.key)
