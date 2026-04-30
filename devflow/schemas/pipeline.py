@@ -2,13 +2,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from devflow.config import settings
+
 
 class PipelineCreate(BaseModel):
     name: str
     description: str
     task_type: str = "feature"
     repo_path: str
-    provider: str = "openai"
+    provider: str = settings.DEFAULT_PROVIDER
     model: str = ""
 
 

@@ -62,6 +62,25 @@ def _cleanup_generated_files() -> None:
         logger.info("Cleaned up %d generated file(s): %s", len(removed), removed)
 
 
+async def _migrate_legacy_openai_provider() -> None:
+    """One-time migration: rename provider='openai' → 'volcano' in all Pipeline rows.
+
+    Historically the column defaulted to 'openai', but those records actually
+    used the Volcano endpoint.  Updating them ensures new code paths that rely
+    on the provider value behave correctly for existing data.
+    """
+    from sqlalchemy import text
+    from devflow.db.engine import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            text("UPDATE pipelines SET provider = 'volcano' WHERE provider = 'openai'")
+        )
+        await session.commit()
+        if result.rowcount:
+            logger.info("Migrated %d pipeline(s): provider 'openai' → 'volcano'", result.rowcount)
+
+
 async def _cancel_stale_runs() -> None:
     """On startup, mark any in-progress runs as failed (they lost their background task)."""
     from sqlalchemy import select, update
@@ -87,6 +106,7 @@ async def _cancel_stale_runs() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_tables()
+    await _migrate_legacy_openai_provider()
     _cleanup_generated_files()
     await _cancel_stale_runs()
     logger.info("=" * 60)
