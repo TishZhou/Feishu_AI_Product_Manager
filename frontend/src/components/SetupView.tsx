@@ -23,7 +23,7 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
     if (workspace.data?.path && !repoPath) {
       setRepoPath(workspace.data.path)
     }
-  }, [workspace.data])
+  }, [workspace.data, repoPath])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -188,9 +188,15 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
                   onFocus={(e) => { e.currentTarget.style.borderColor = focusStyle.borderColor }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = blurStyle.borderColor }}
                 />
-                <p className="text-[10px] text-slate-500 leading-snug px-1">
-                  服务器上的代码目录绝对路径
-                </p>
+                {workspace.isError ? (
+                  <p className="text-[10px] text-amber-500 leading-snug px-1">
+                    无法获取默认路径，请手动填写服务器上的绝对路径
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-500 leading-snug px-1">
+                    服务器上的代码目录绝对路径
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
