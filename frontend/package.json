@@ -12,7 +12,6 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-query": "^5.100.6",
-    "@xyflow/react": "^12.10.2",
     "axios": "^1.15.2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
