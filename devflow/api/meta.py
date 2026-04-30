@@ -17,7 +17,7 @@ async def get_workspace():
 @router.get("/providers")
 async def list_providers():
     results = []
-    for name in ("openai", "volcano"):
+    for name in ("gemini", "volcano"):
         info = await provider_router.check_connectivity(name)
         results.append(info)
     return {"providers": results}

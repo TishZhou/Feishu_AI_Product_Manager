@@ -11,7 +11,7 @@ interface SetupViewProps {
 export function SetupView({ onRunStarted }: SetupViewProps) {
   const [taskDescription, setTaskDescription] = useState('')
   const [repoPath, setRepoPath] = useState('')
-  const [provider, setProvider] = useState('openai')
+  const [provider, setProvider] = useState('gemini')
   const [model, setModel] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -211,7 +211,7 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
                     className="w-full rounded-xl px-4 py-3 text-white text-sm appearance-none cursor-pointer transition-all"
                     style={{ ...inputStyle, backgroundImage: 'none' }}
                   >
-                    <option value="openai" style={{ background: '#1e293b' }}>OpenAI</option>
+                    <option value="gemini" style={{ background: '#1e293b' }}>Google Gemini</option>
                     <option value="volcano" style={{ background: '#1e293b' }}>火山引擎</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">

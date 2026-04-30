@@ -26,10 +26,10 @@ class ProviderRouter:
 
     def get_client(self, provider: str) -> AsyncOpenAI:
         if provider not in self._clients:
-            if provider == "openai":
-                self._clients["openai"] = AsyncOpenAI(
-                    api_key=settings.OPENAI_API_KEY,
-                    base_url=settings.OPENAI_BASE_URL,
+            if provider == "gemini":
+                self._clients["gemini"] = AsyncOpenAI(
+                    api_key=settings.GEMINI_API_KEY,
+                    base_url=settings.GEMINI_BASE_URL,
                 )
             elif provider == "volcano":
                 self._clients["volcano"] = AsyncOpenAI(
@@ -37,14 +37,14 @@ class ProviderRouter:
                     base_url=settings.VOLCANO_BASE_URL,
                 )
             else:
-                raise ValueError(f"Unknown provider: {provider!r}. Supported: openai, volcano")
+                raise ValueError(f"Unknown provider: {provider!r}. Supported: gemini, volcano")
         return self._clients[provider]
 
     def resolve_model(self, provider: str, model: str | None) -> str:
         if model:
             return model
-        if provider == "openai":
-            return settings.OPENAI_DEFAULT_MODEL
+        if provider == "gemini":
+            return settings.GEMINI_DEFAULT_MODEL
         if provider == "volcano":
             return settings.VOLCANO_DEFAULT_MODEL
         return ""
@@ -116,6 +116,8 @@ class ProviderRouter:
         stage_key: str = "",
     ) -> str:
         provider = provider or settings.DEFAULT_PROVIDER
+        if provider == "openai":
+            provider = "gemini"  # openai has been replaced by gemini
         client = self.get_client(provider)
         resolved_model = self.resolve_model(provider, model)
 
