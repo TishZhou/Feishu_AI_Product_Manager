@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Editor } from '@monaco-editor/react'
 import { Check, X, AlertTriangle, RotateCcw } from 'lucide-react'
@@ -19,8 +19,14 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null)
   const [content, setContent] = useState<string>('')
 
-  const requiredStages = JSON.parse(checkpoint.required_stage_keys) as string[]
-  const relevantArtifacts = artifacts.filter(a => requiredStages.includes(a.stage_key))
+  const requiredStages = useMemo(
+    () => JSON.parse(checkpoint.required_stage_keys) as string[],
+    [checkpoint.required_stage_keys]
+  )
+  const relevantArtifacts = useMemo(
+    () => artifacts.filter(a => requiredStages.includes(a.stage_key)),
+    [artifacts, requiredStages]
+  )
 
   useEffect(() => {
     if (relevantArtifacts.length > 0 && !activeArtifactId) {
