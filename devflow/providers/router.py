@@ -126,11 +126,22 @@ class ProviderRouter:
             {"role": "user", "content": user},
         ]
 
+        # Providers that do NOT support the response_format API parameter
+        _NO_JSON_FORMAT_PROVIDERS = {"volcano"}
+
+        if json_mode and provider in _NO_JSON_FORMAT_PROVIDERS:
+            # Inject JSON instruction into system prompt instead of using API param
+            messages[0]["content"] = (
+                messages[0]["content"]
+                + "\n\nIMPORTANT: Your response MUST be valid JSON only. "
+                "Do not include markdown, code fences, or any text outside the JSON object."
+            )
+
         kwargs: dict[str, Any] = {"model": resolved_model, "messages": messages}
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
-        if json_mode:
+        if json_mode and provider not in _NO_JSON_FORMAT_PROVIDERS:
             kwargs["response_format"] = {"type": "json_object"}
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
