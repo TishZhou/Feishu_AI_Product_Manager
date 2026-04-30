@@ -1,9 +1,17 @@
+import os
+from pathlib import Path
+
 from fastapi import APIRouter
 
 from devflow.core.pipeline_definition import STAGE_REGISTRY
 from devflow.providers.router import provider_router
 
 router = APIRouter(tags=["Meta"])
+
+
+@router.get("/workspace")
+async def get_workspace():
+    return {"path": str(Path(os.getcwd()).resolve())}
 
 
 @router.get("/providers")

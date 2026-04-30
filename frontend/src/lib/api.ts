@@ -61,4 +61,7 @@ export const apiClient = {
 
   // Meta
   getMeta: () => api.get('/api/meta').then((r) => r.data),
+
+  getWorkspace: () =>
+    api.get<{ path: string }>('/api/workspace').then((r) => r.data),
 }

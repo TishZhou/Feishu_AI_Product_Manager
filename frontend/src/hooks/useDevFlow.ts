@@ -2,6 +2,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import type { PipelineCreate } from '../types/api'
 
+export function useWorkspace() {
+  return useQuery({
+    queryKey: ['workspace'],
+    queryFn: () => apiClient.getWorkspace(),
+    staleTime: Infinity,
+    retry: false,
+  })
+}
+
 export function useCreatePipeline() {
   return useMutation({
     mutationFn: (data: PipelineCreate) => apiClient.createPipeline(data),

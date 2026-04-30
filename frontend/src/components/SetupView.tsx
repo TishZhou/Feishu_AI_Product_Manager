@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Play, Rocket, Zap, GitBranch, Cpu } from 'lucide-react'
-import { useCreatePipeline, useCreateRun } from '../hooks/useDevFlow'
+import { useState, useEffect } from 'react'
+import { Play, Rocket, Zap, GitBranch, Cpu, AlertCircle } from 'lucide-react'
+import { useCreatePipeline, useCreateRun, useWorkspace } from '../hooks/useDevFlow'
 import { motion } from 'framer-motion'
+import axios from 'axios'
 
 interface SetupViewProps {
   onRunStarted: (runId: string) => void
@@ -9,16 +10,25 @@ interface SetupViewProps {
 
 export function SetupView({ onRunStarted }: SetupViewProps) {
   const [taskDescription, setTaskDescription] = useState('')
-  const [repoPath, setRepoPath] = useState('./')
+  const [repoPath, setRepoPath] = useState('')
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('')
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
+  const workspace = useWorkspace()
   const createPipeline = useCreatePipeline()
   const createRun = useCreateRun()
+
+  useEffect(() => {
+    if (workspace.data?.path && !repoPath) {
+      setRepoPath(workspace.data.path)
+    }
+  }, [workspace.data])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!taskDescription) return
+    setSubmitError(null)
 
     try {
       const pipeline = await createPipeline.mutateAsync({
@@ -33,11 +43,29 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
       const run = await createRun.mutateAsync(pipeline.id)
       onRunStarted(run.id)
     } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 400) {
+        const detail = err.response.data?.detail ?? ''
+        if (detail.toLowerCase().includes('repo_path') || detail.toLowerCase().includes('does not exist')) {
+          setSubmitError(`路径不存在，请检查服务器上是否有该目录：${repoPath}`)
+        } else {
+          setSubmitError(detail || '请求参数有误，请检查后重试')
+        }
+      } else {
+        setSubmitError('启动流水线失败，请稍后重试')
+      }
       console.error('启动流水线失败', err)
     }
   }
 
   const isLoading = createPipeline.isPending || createRun.isPending
+
+  const inputStyle = {
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    outline: 'none',
+  }
+  const focusStyle = { borderColor: 'rgba(51,112,255,0.5)' }
+  const blurStyle = { borderColor: 'rgba(255,255,255,0.12)' }
 
   return (
     <div
@@ -70,7 +98,7 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
           }}
         />
 
-        {/* The frosted glass card — backdrop-filter blurs the PHOTO behind it */}
+        {/* Frosted glass card */}
         <div
           className="relative rounded-3xl p-8 shadow-[0_24px_60px_rgba(0,0,0,0.55)]"
           style={{
@@ -124,20 +152,13 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
                   onChange={(e) => setTaskDescription(e.target.value)}
                   placeholder="描述你需要 AI 构建的功能或修复的问题..."
                   className="w-full h-32 rounded-2xl p-4 text-white placeholder-slate-500 resize-none mono text-sm leading-relaxed transition-all"
-                  style={{
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    backdropFilter: 'blur(8px)',
-                    outline: 'none',
-                  }}
+                  style={inputStyle}
                   onFocus={(e) => {
                     e.currentTarget.style.borderColor = 'rgba(51,112,255,0.6)'
-                    e.currentTarget.style.boxShadow =
-                      '0 0 0 3px rgba(51,112,255,0.15)'
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(51,112,255,0.15)'
                   }}
                   onBlur={(e) => {
-                    e.currentTarget.style.borderColor =
-                      'rgba(255,255,255,0.12)'
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'
                     e.currentTarget.style.boxShadow = 'none'
                   }}
                   required
@@ -155,26 +176,21 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-200 uppercase tracking-widest">
                   <GitBranch className="w-3 h-3 text-slate-400" />
-                  仓库路径
+                  本地仓库路径
                 </label>
                 <input
                   type="text"
                   value={repoPath}
-                  onChange={(e) => setRepoPath(e.target.value)}
+                  onChange={(e) => { setRepoPath(e.target.value); setSubmitError(null) }}
+                  placeholder={workspace.isLoading ? '正在获取...' : '/path/to/repo'}
                   className="w-full rounded-xl px-4 py-3 text-white mono text-sm transition-all"
-                  style={{
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    outline: 'none',
-                  }}
-                  onFocus={(e) => {
-                    e.currentTarget.style.borderColor = 'rgba(51,112,255,0.5)'
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor =
-                      'rgba(255,255,255,0.12)'
-                  }}
+                  style={inputStyle}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = focusStyle.borderColor }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = blurStyle.borderColor }}
                 />
+                <p className="text-[10px] text-slate-500 leading-snug px-1">
+                  服务器上的代码目录绝对路径
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -187,33 +203,14 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
                     value={provider}
                     onChange={(e) => setProvider(e.target.value)}
                     className="w-full rounded-xl px-4 py-3 text-white text-sm appearance-none cursor-pointer transition-all"
-                    style={{
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      outline: 'none',
-                      backgroundImage: 'none',
-                    }}
+                    style={{ ...inputStyle, backgroundImage: 'none' }}
                   >
-                    <option value="openai" style={{ background: '#1e293b' }}>
-                      OpenAI
-                    </option>
-                    <option value="volcano" style={{ background: '#1e293b' }}>
-                      火山引擎
-                    </option>
+                    <option value="openai" style={{ background: '#1e293b' }}>OpenAI</option>
+                    <option value="volcano" style={{ background: '#1e293b' }}>火山引擎</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                    <svg
-                      className="w-4 h-4 text-slate-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
+                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
                 </div>
@@ -224,9 +221,7 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 uppercase tracking-widest">
                 模型指定
-                <span className="normal-case font-normal text-slate-500 tracking-normal">
-                  （可选）
-                </span>
+                <span className="normal-case font-normal text-slate-500 tracking-normal">（可选）</span>
               </label>
               <input
                 type="text"
@@ -234,27 +229,32 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="留空使用默认模型，如 gpt-4o"
                 className="w-full rounded-xl px-4 py-3 text-white mono text-sm transition-all"
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  outline: 'none',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(51,112,255,0.5)'
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'
-                }}
+                style={inputStyle}
+                onFocus={(e) => { e.currentTarget.style.borderColor = focusStyle.borderColor }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = blurStyle.borderColor }}
               />
             </div>
+
+            {/* Error banner */}
+            {submitError && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                }}
+              >
+                <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-300 leading-snug">{submitError}</p>
+              </motion.div>
+            )}
 
             {/* Divider */}
             <div
               className="h-px w-full"
-              style={{
-                background:
-                  'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)',
-              }}
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)' }}
             />
 
             {/* Submit */}
