@@ -12,11 +12,11 @@ class Settings(BaseSettings):
 
     # Volcano Engine Trae (ByteDance) — OpenAI-compatible
     VOLCANO_API_KEY: str = ""
-    VOLCANO_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/compatible/v1"
-    VOLCANO_DEFAULT_MODEL: str = "seed-v1.6"
+    VOLCANO_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    VOLCANO_DEFAULT_MODEL: str = "ep-20260423223203-k4sbx"
 
     # App
-    DEFAULT_PROVIDER: str = "gemini"
+    DEFAULT_PROVIDER: str = "volcano"
     ARTIFACTS_DIR: str = "artifacts"
     DATABASE_URL: str = "sqlite+aiosqlite:///data/devflow.db"
 

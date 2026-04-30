@@ -11,7 +11,7 @@ interface SetupViewProps {
 export function SetupView({ onRunStarted }: SetupViewProps) {
   const [taskDescription, setTaskDescription] = useState('')
   const [repoPath, setRepoPath] = useState('')
-  const [provider, setProvider] = useState('gemini')
+  const [provider, setProvider] = useState('volcano')
   const [model, setModel] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
 
