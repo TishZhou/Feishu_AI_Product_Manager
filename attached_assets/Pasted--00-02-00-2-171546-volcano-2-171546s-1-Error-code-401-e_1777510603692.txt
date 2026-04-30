@@ -1,0 +1,146 @@
+
+00:02
+阶段 00:2.171546
+流水线进度
+
+当前阶段
+
+需求分析
+已失败
+volcano
+2.171546s
+第 1 次
+Error code: 401 - {'error': {'code': 'AuthenticationError', 'message': 'the API key or AK/SK in the request is missing or invalid. request id: 021777510576156635d5b08a34ae90b4fbdef6e30d38d32c755cd', 'param': '', 'type': 'Unauthorized'}}
+输出产物
+
+暂无产物生成
+
+全部阶段
+
+AI 思考日志
+等待中
+00:56:14
+·
+[系统]
+系统
+流水线启动  provider=volcano  model=default
+00:56:14
+·
+[系统]
+系统
+任务: 我想要做一个可以实时监控我的邮件的agent
+00:56:14
+▶
+[需求]
+需求分析
+开始执行阶段  attempt=1
+00:56:14
+⚡
+[需求]
+需求分析
+LLM 推理中  model=seed-v1.6  第 1 轮
+00:56:16
+✗
+[需求]
+需求分析
+执行异常: Error code: 401 - {'error': {'code': 'AuthenticationError', 'message': 'the API key or AK/SK in the request is missing or invalid. request id: 021777510576156635d5b08a34ae90b4fbdef6e30d38d32c755cd', '
+00:56:14
+·
+[系统]
+系统
+流水线启动  provider=volcano  model=default
+00:56:14
+·
+[系统]
+系统
+任务: 我想要做一个可以实时监控我的邮件的agent
+00:56:14
+▶
+[需求]
+需求分析
+开始执行阶段  attempt=1
+00:56:14
+⚡
+[需求]
+需求分析
+LLM 推理中  model=seed-v1.6  第 1 轮
+00:56:16
+✗
+[需求]
+需求分析
+执行异常: Error code: 401 - {'error': {'code': 'AuthenticationError', 'message': 'the API key or AK/SK in the request is missing or invalid. request id: 021777510576156635d5b08a34ae90b4fbdef6e30d38d32c755cd', '
+00:56:14
+·
+[系统]
+系统
+流水线启动  provider=volcano  model=default
+00:56:14
+·
+[系统]
+系统
+任务: 我想要做一个可以实时监控我的邮件的agent
+00:56:14
+▶
+[需求]
+需求分析
+开始执行阶段  attempt=1
+00:56:14
+⚡
+[需求]
+需求分析
+LLM 推理中  model=seed-v1.6  第 1 轮
+00:56:16
+✗
+[需求]
+需求分析
+执行异常: Error code: 401 - {'error': {'code': 'AuthenticationError', 'message': 'the API key or AK/SK in the request is missing or invalid. request id: 021777510576156635d5b08a34ae90b4fbdef6e30d38d32c755cd', '
+00:56:14
+·
+[系统]
+系统
+流水线启动  provider=volcano  model=default
+00:56:14
+·
+[系统]
+系统
+任务: 我想要做一个可以实时监控我的邮件的agent
+00:56:14
+▶
+[需求]
+需求分析
+开始执行阶段  attempt=1
+00:56:14
+⚡
+[需求]
+需求分析
+LLM 推理中  model=seed-v1.6  第 1 轮
+00:56:16
+✗
+[需求]
+需求分析
+执行异常: Error code: 401 - {'error': {'code': 'AuthenticationError', 'message': 'the API key or AK/SK in the request is missing or invalid. request id: 021777510576156635d5b08a34ae90b4fbdef6e30d38d32c755cd', '
+00:56:14
+·
+[系统]
+系统
+流水线启动  provider=volcano  model=default
+00:56:14
+·
+[系统]
+系统
+任务: 我想要做一个可以实时监控我的邮件的agent
+00:56:14
+▶
+[需求]
+需求分析
+开始执行阶段  attempt=1
+00:56:14
+⚡
+[需求]
+需求分析
+LLM 推理中  model=seed-v1.6  第 1 轮
+00:56:16
+✗
+[需求]
+需求分析
+执行异常: Error code: 401 - {'error': {'code': 'AuthenticationError', 'message': 'the API key or AK/SK in the request is missing
