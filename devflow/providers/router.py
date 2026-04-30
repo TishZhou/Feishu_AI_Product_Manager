@@ -62,7 +62,7 @@ class ProviderRouter:
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
-        if json_mode:
+        if json_mode and provider != "volcano":
             kwargs["response_format"] = {"type": "json_object"}
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
@@ -70,6 +70,7 @@ class ProviderRouter:
         import time as _time
         t0 = _time.monotonic()
         logger.info("[LLM] ▶ calling %s  model=%s  tools=%s  json=%s", provider, resolved_model, bool(tools), json_mode)
+        print(f"[LLM] provider={provider}  model={resolved_model}", flush=True)
 
         # Agentic tool-use loop (max 10 rounds to prevent infinite loops)
         for round_num in range(10):

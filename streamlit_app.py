@@ -1,7 +1,7 @@
 """
 DevFlow Engine — Streamlit UI
 Run:   streamlit run streamlit_app.py
-需先启动后端：uvicorn devflow.main:app --reload
+需先启动后端：uvicorn devflow.main:app --reload --reload-dir devflow
 """
 
 import json
@@ -54,7 +54,7 @@ def api(method: str, path: str, silent: bool = False, **kwargs):
         return r.json()
     except requests.ConnectionError:
         if not silent:
-            st.error("❌ 无法连接到后端服务，请确认已运行：`uvicorn devflow.main:app --reload`")
+            st.error("❌ 无法连接到后端服务，请确认已运行：`uvicorn devflow.main:app --reload --reload-dir devflow`")
         return None
     except requests.HTTPError as e:
         if not silent:

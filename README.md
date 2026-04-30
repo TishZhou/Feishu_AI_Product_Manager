@@ -13,30 +13,37 @@
     │
     ▼
 [Stage 1]  📋 需求分析        → requirement_spec.json
+    │         agents/requirement_analysis.py
     │         理解需求背景、目标和验收标准
     ▼
 [Stage 2A] 🏗️  架构设计        → solution_design.md
+    │         agents/solution_architecture.py
     │         主动读取代码库，设计技术方案
     ▼
 [Stage 2B] 📝 详细规格        → detailed_spec.json
+    │         agents/detailed_spec.py
     │         生成可直接执行的实现规格
     │
 ⏸️  Checkpoint 1 — 你审核方案文档，通过继续 / 打回从头重跑
     │
     ▼
 [Stage 3]  💻 代码生成        → code_diff.patch + implementation_summary.md
+    │         agents/code_generation.py
     │         按规格生成代码 diff，自动 git apply 到仓库
     ▼
 [Stage 4]  🧪 测试生成        → test_report.json
+    │         agents/test_generation.py
     │         自动写测试并运行
     ▼
 [Stage 5]  🔍 代码审查        → review_report.md
+    │         agents/code_review.py
     │         从安全 / 性能 / 规范角度审查代码
     │
 ⏸️  Checkpoint 2 — 你审核代码，通过继续 / 打回从代码生成重跑
     │
     ▼
 [Stage 6]  🚀 交付打包        → delivery_summary.md + final_diff.patch
+              agents/delivery.py
 ```
 
 每次 run 的产物保存在 `artifacts/{run_id}/`，代码变更在 Stage 3 后自动写入仓库。
@@ -148,10 +155,15 @@ devflow/
 │   ├── state_machine.py        # RunState / StageState 枚举
 │   └── background.py           # asyncio 后台任务管理
 ├── agents/                  # 7 个 Agent 实现
-│   ├── base.py              # BaseAgent / AgentContext / AgentResult
-│   ├── prompts/             # 各 Agent 的 prompt 模板
-│   └── *.py                 # requirement_analysis / solution_architecture / detailed_spec /
-│                            # code_generation / test_generation / code_review / delivery
+│   ├── base.py                      # BaseAgent / AgentContext / AgentResult
+│   ├── requirement_analysis.py      # Stage 1 — 需求分析
+│   ├── solution_architecture.py     # Stage 2A — 架构设计
+│   ├── detailed_spec.py             # Stage 2B — 详细规格
+│   ├── code_generation.py           # Stage 3 — 代码生成
+│   ├── test_generation.py           # Stage 4 — 测试生成
+│   ├── code_review.py               # Stage 5 — 代码审查
+│   ├── delivery.py                  # Stage 6 — 交付打包
+│   └── prompts/                     # 各 Agent 对应的 prompt 模板
 ├── providers/
 │   └── router.py            # ProviderRouter（OpenAI + 火山引擎，含 tool-use 循环）
 ├── tools/
