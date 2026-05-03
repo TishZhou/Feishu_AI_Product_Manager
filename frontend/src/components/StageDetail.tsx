@@ -12,65 +12,38 @@ interface StageDetailProps {
 }
 
 const STATUS_CN: Record<string, string> = {
-  running:   '推理中',
-  succeeded: '已完成',
-  failed:    '已失败',
-  rejected:  '已拒绝',
-  pending:   '等待中',
-  skipped:   '已跳过',
+  running: '推理中', succeeded: '已完成', failed: '已失败',
+  rejected: '已拒绝', pending: '等待中', skipped: '已跳过',
 }
 
-/* Dot / text / card accent per status */
+/* Low-saturation status colors — no neon */
 const STATUS_CFG: Record<string, {
-  dot: string; text: string; badgeBg: string; badgeBorder: string
-  cardBorder: string; topLine: string; glow: string
+  dot: string; text: string; badgeBg: string; badgeBorder: string; topLine: string
 }> = {
-  running:   {
-    dot: '#60a5fa', text: '#93c5fd',
-    badgeBg: 'rgba(37,99,235,0.18)', badgeBorder: 'rgba(99,162,255,0.30)',
-    cardBorder: 'rgba(99,162,255,0.22)', topLine: 'rgba(99,162,255,0.40)',
-    glow: '0 0 40px rgba(37,99,235,0.20)',
-  },
-  succeeded: {
-    dot: '#34d399', text: '#6ee7b7',
-    badgeBg: 'rgba(5,150,105,0.15)', badgeBorder: 'rgba(52,211,153,0.28)',
-    cardBorder: 'rgba(52,211,153,0.18)', topLine: 'rgba(52,211,153,0.35)',
-    glow: '0 0 32px rgba(5,150,105,0.12)',
-  },
-  failed:    {
-    dot: '#f87171', text: '#fca5a5',
-    badgeBg: 'rgba(185,28,28,0.15)', badgeBorder: 'rgba(248,113,113,0.28)',
-    cardBorder: 'rgba(248,113,113,0.18)', topLine: 'rgba(248,113,113,0.35)',
-    glow: '0 0 32px rgba(185,28,28,0.12)',
-  },
-  rejected:  {
-    dot: '#fbbf24', text: '#fcd34d',
-    badgeBg: 'rgba(161,98,7,0.15)', badgeBorder: 'rgba(251,191,36,0.28)',
-    cardBorder: 'rgba(251,191,36,0.18)', topLine: 'rgba(251,191,36,0.35)',
-    glow: '0 0 32px rgba(161,98,7,0.12)',
-  },
-  pending:   {
-    dot: '#1e3a5f', text: '#1e3a5f',
-    badgeBg: 'rgba(10,26,70,0.35)', badgeBorder: 'rgba(99,155,255,0.08)',
-    cardBorder: 'rgba(99,155,255,0.10)', topLine: 'transparent',
-    glow: 'none',
-  },
-}
-
-const PROGRESS_COLOR: Record<string, string> = {
-  succeeded: '#34d399', running: '#60a5fa', failed: '#f87171', rejected: '#fbbf24',
+  running:   { dot: 'rgba(215,228,255,0.85)', text: 'rgba(215,228,255,0.85)', badgeBg: 'rgba(255,255,255,0.05)', badgeBorder: 'rgba(255,255,255,0.12)', topLine: 'rgba(255,255,255,0.12)' },
+  succeeded: { dot: 'rgba(255,255,255,0.55)', text: 'rgba(255,255,255,0.55)', badgeBg: 'rgba(255,255,255,0.04)', badgeBorder: 'rgba(255,255,255,0.10)', topLine: 'rgba(255,255,255,0.10)' },
+  failed:    { dot: 'rgba(255,180,175,0.60)', text: 'rgba(255,180,175,0.60)', badgeBg: 'rgba(255,255,255,0.04)', badgeBorder: 'rgba(255,180,175,0.18)', topLine: 'rgba(255,180,175,0.22)' },
+  rejected:  { dot: 'rgba(255,215,145,0.55)', text: 'rgba(255,215,145,0.55)', badgeBg: 'rgba(255,255,255,0.04)', badgeBorder: 'rgba(255,215,145,0.18)', topLine: 'rgba(255,215,145,0.22)' },
+  pending:   { dot: 'rgba(255,255,255,0.12)', text: 'rgba(255,255,255,0.14)', badgeBg: 'rgba(255,255,255,0.03)', badgeBorder: 'rgba(255,255,255,0.07)', topLine: 'transparent' },
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="h-px flex-1" style={{ background: 'rgba(99,155,255,0.12)' }} />
-      <span className="text-[9px] font-bold uppercase tracking-[0.20em]" style={{ color: 'rgba(99,155,255,0.40)' }}>
+    <div className="flex items-center gap-3 mb-4">
+      <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.06)' }} />
+      <span className="text-[9px] font-medium uppercase tracking-[0.22em]"
+        style={{ color: 'rgba(255,255,255,0.22)' }}>
         {children}
       </span>
-      <div className="h-px flex-1" style={{ background: 'rgba(99,155,255,0.12)' }} />
+      <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.06)' }} />
     </div>
   )
+}
+
+function formatDur(s: number) {
+  if (!s) return ''
+  if (s < 60) return `${Number.isInteger(s) ? s : s.toFixed(1)}s`
+  return `${(s / 60).toFixed(1)}m`
 }
 
 export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageKey, onClearViewing }: StageDetailProps) {
@@ -89,13 +62,17 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
   if (!displayStage) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="glass-card w-16 h-16 rounded-2xl mx-auto flex items-center justify-center card-enter">
-            <Cpu className="w-7 h-7" style={{ color: 'rgba(79,142,255,0.40)' }} />
+        <div className="text-center space-y-5">
+          <div className="w-14 h-14 rounded-2xl mx-auto flex items-center justify-center"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.06)',
+            }}>
+            <Cpu className="w-6 h-6" style={{ color: 'rgba(255,255,255,0.20)' }} />
           </div>
           <div>
-            <p className="text-sm font-semibold" style={{ color: 'rgba(147,197,253,0.60)' }}>等待流水线启动</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(99,155,255,0.30)' }}>启动后可在此查看实时进度</p>
+            <p className="text-[13px] font-medium" style={{ color: 'rgba(255,255,255,0.35)' }}>等待流水线启动</p>
+            <p className="text-[11px] mt-1.5" style={{ color: 'rgba(255,255,255,0.16)' }}>启动后可在此查看实时进度</p>
           </div>
         </div>
       </div>
@@ -108,32 +85,31 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
   const cfg       = STATUS_CFG[st] ?? STATUS_CFG.pending
   const isRunning = st === 'running'
 
+  const succeededCount = stages.filter(s => s.status === 'succeeded').length
+  const runningStage   = stages.find(s => s.status === 'running')
+  const runningDef     = runningStage ? STAGES.find(s => s.key === runningStage.stage_key) : null
+
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-7">
 
       {/* ── Viewing history banner ── */}
       {isViewingHistory && (
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl card-enter"
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl"
           style={{
-            background: 'rgba(120,78,0,0.15)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderTop: '1px solid rgba(251,191,36,0.20)',
-            borderRight: '1px solid rgba(251,191,36,0.20)',
-            borderBottom: '1px solid rgba(251,191,36,0.20)',
-            borderLeft: '3px solid rgba(251,191,36,0.60)',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.07)',
+            background: 'rgba(255,255,255,0.03)',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.06)',
+            borderLeft: '2px solid rgba(255,215,145,0.35)',
           }}>
-          <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: '#fcd34d' }} />
-          <p className="text-xs flex-1" style={{ color: '#fcd34d' }}>
-            正在查看: <span className="font-semibold">{stageDef?.label}</span>
+          <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: 'rgba(255,215,145,0.55)' }} />
+          <p className="text-[11px] flex-1" style={{ color: 'rgba(255,215,145,0.65)' }}>
+            查看: <span className="font-semibold">{stageDef?.label}</span>
           </p>
           <button onClick={onClearViewing}
-            className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
+            className="flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-lg transition-opacity hover:opacity-70"
             style={{
-              background: 'rgba(251,191,36,0.14)',
-              border: '1px solid rgba(251,191,36,0.25)',
-              color: '#fbbf24',
+              background: 'rgba(255,255,255,0.05)',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.50)',
             }}>
             <ArrowRight className="w-2.5 h-2.5" />
             回到当前
@@ -142,49 +118,48 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
       )}
 
       {/* ── Stage header card ── */}
-      <div className="relative rounded-2xl overflow-hidden p-4 card-enter"
+      <div className="relative rounded-2xl p-5"
         style={{
-          background: 'rgba(10, 26, 70, 0.58)',
-          backdropFilter: 'blur(22px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(22px) saturate(1.5)',
-          border: `1px solid ${cfg.cardBorder}`,
-          boxShadow: `${cfg.glow}, 0 4px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.10)`,
+          background: 'rgba(255,255,255,0.03)',
+          boxShadow: '0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.12), 0 4px 28px rgba(0,0,0,0.22)',
         }}>
-        {/* Colored top line */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none"
-          style={{ background: `linear-gradient(90deg,transparent,${cfg.topLine},transparent)` }} />
+        {/* Colored top accent line */}
+        <div className="absolute top-0 left-[20%] right-[20%] h-px rounded-full"
+          style={{ background: cfg.topLine }} />
 
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <p className="text-[9px] font-bold uppercase tracking-[0.22em] mb-2" style={{ color: 'rgba(99,162,255,0.45)' }}>
+            <p className="text-[9px] font-medium uppercase tracking-[0.24em] mb-3"
+              style={{ color: 'rgba(255,255,255,0.22)' }}>
               {isViewingHistory ? '查看阶段' : '当前阶段'}
             </p>
-            <h2 className="text-[22px] font-bold tracking-tight text-white mb-3 truncate">
+            <h2 className="text-[20px] font-semibold tracking-tight mb-4 truncate"
+              style={{ color: 'rgba(255,255,255,0.88)', letterSpacing: '-0.025em' }}>
               {stageDef?.label || displayStage.stage_key}
             </h2>
 
             <div className="flex flex-wrap items-center gap-2">
               {/* Status badge */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              <div className="flex items-center gap-1.5 px-2.5 py-[5px] rounded-full text-[10px] font-medium"
                 style={{
                   background: cfg.badgeBg,
-                  border: `1px solid ${cfg.badgeBorder}`,
+                  boxShadow: `0 0 0 1px ${cfg.badgeBorder}`,
                   color: cfg.text,
-                  backdropFilter: 'blur(8px)',
                 }}>
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRunning ? 'animate-pulse' : ''}`}
-                  style={{ background: cfg.dot, boxShadow: isRunning ? `0 0 6px ${cfg.dot}` : 'none' }} />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRunning ? 'animate-pulse' : ''}`}
+                  style={{ background: cfg.dot }}
+                />
                 {STATUS_CN[st] || st}
               </div>
 
               {/* Provider */}
               {displayStage.provider && (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-mono"
+                <div className="flex items-center gap-1.5 px-2.5 py-[5px] rounded-full text-[10px] font-mono"
                   style={{
-                    background: 'rgba(79,70,229,0.15)',
-                    border: '1px solid rgba(139,92,246,0.22)',
-                    color: '#c4b5fd',
-                    backdropFilter: 'blur(8px)',
+                    background: 'rgba(255,255,255,0.03)',
+                    boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.38)',
                   }}>
                   <Zap className="w-3 h-3" />
                   {displayStage.provider}
@@ -193,42 +168,42 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
 
               {/* Duration */}
               {displayStage.duration_seconds > 0 && (
-                <div className="flex items-center gap-1 text-[11px] font-mono" style={{ color: 'rgba(99,162,255,0.45)' }}>
+                <div className="flex items-center gap-1 text-[10px] font-mono"
+                  style={{ color: 'rgba(255,255,255,0.28)' }}>
                   <Clock className="w-3 h-3" />
-                  {displayStage.duration_seconds}s
+                  {formatDur(displayStage.duration_seconds)}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Attempt badge */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0"
+          {/* Attempt */}
+          <div className="flex items-center gap-1.5 px-2.5 py-[5px] rounded-xl shrink-0"
             style={{
-              background: 'rgba(5,14,38,0.50)',
-              border: '1px solid rgba(99,155,255,0.12)',
-              backdropFilter: 'blur(10px)',
+              background: 'rgba(255,255,255,0.03)',
+              boxShadow: '0 0 0 1px rgba(255,255,255,0.07)',
             }}>
-            <Hash className="w-3 h-3" style={{ color: 'rgba(99,162,255,0.40)' }} />
-            <span className="text-[11px] font-mono" style={{ color: 'rgba(99,162,255,0.50)' }}>第 {displayStage.attempt} 次</span>
+            <Hash className="w-3 h-3" style={{ color: 'rgba(255,255,255,0.18)' }} />
+            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
+              第 {displayStage.attempt} 次
+            </span>
           </div>
         </div>
       </div>
 
       {/* ── Error block ── */}
       {displayStage.error_message && (
-        <div className="flex gap-3 p-4 rounded-xl"
+        <div className="flex gap-3 px-4 py-4 rounded-2xl"
           style={{
-            background: 'rgba(30,10,20,0.55)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            borderTop: '1px solid rgba(248,113,113,0.18)',
-            borderRight: '1px solid rgba(248,113,113,0.18)',
-            borderBottom: '1px solid rgba(248,113,113,0.18)',
-            borderLeft: '3px solid rgba(248,113,113,0.70)',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.05)',
+            background: 'rgba(255,255,255,0.02)',
+            boxShadow: '0 0 0 1px rgba(255,180,175,0.15), inset 0 1px 0 rgba(255,255,255,0.04)',
+            borderLeft: '2px solid rgba(255,180,175,0.35)',
           }}>
-          <AlertTriangle className="w-4 h-4 text-[#f87171] shrink-0 mt-0.5" />
-          <pre className="whitespace-pre-wrap text-[#fca5a5] text-[11px] font-mono leading-relaxed">{displayStage.error_message}</pre>
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'rgba(255,180,175,0.60)' }} />
+          <pre className="whitespace-pre-wrap text-[11px] font-mono leading-relaxed"
+            style={{ color: 'rgba(255,180,175,0.65)' }}>
+            {displayStage.error_message}
+          </pre>
         </div>
       )}
 
@@ -239,63 +214,60 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
           <div className="flex flex-wrap gap-2">
             {stageArts.map(artifact => (
               <button key={artifact.id} onClick={() => onSelectArtifact(artifact)}
-                className="artifact-chip flex items-center gap-2 px-3 py-2 rounded-xl">
-                <FileCode2 className="w-3.5 h-3.5" style={{ color: '#60a5fa' }} />
-                <span className="text-xs font-mono text-blue-100">{artifact.filename}</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md"
-                  style={{ color: 'rgba(99,162,255,0.50)', background: 'rgba(10,26,70,0.50)' }}>
+                className="artifact-chip flex items-center gap-2 px-3 py-[7px] rounded-xl">
+                <FileCode2 className="w-3.5 h-3.5 shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }} />
+                <span className="text-[11px] font-mono" style={{ color: 'rgba(255,255,255,0.60)' }}>
+                  {artifact.filename}
+                </span>
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md"
+                  style={{ color: 'rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.04)' }}>
                   {(artifact.size_bytes / 1024).toFixed(1)}k
                 </span>
               </button>
             ))}
           </div>
         ) : (
-          <p className="text-xs italic pl-1" style={{ color: 'rgba(99,155,255,0.28)' }}>暂无产物生成</p>
+          <p className="text-[11px] pl-1" style={{ color: 'rgba(255,255,255,0.18)' }}>暂无产物</p>
         )}
       </div>
 
-      {/* ── All stages progress ── */}
+      {/* ── Progress — single thin line ── */}
       <div>
         <SectionLabel>全部阶段</SectionLabel>
-        <div className="flex gap-1.5 mb-2">
+
+        {/* Thin segmented line */}
+        <div className="flex gap-[3px]">
           {STAGES.map(s => {
-            const r  = stages.find(sr => sr.stage_key === s.key)
-            const rs = r?.status || 'pending'
-            const color = PROGRESS_COLOR[rs]
+            const r    = stages.find(sr => sr.stage_key === s.key)
+            const done = r?.status === 'succeeded'
+            const run  = r?.status === 'running'
             return (
-              <div key={s.key} className="group/seg flex-1 relative">
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(10,26,70,0.55)' }}>
-                  <div className="h-full rounded-full transition-all duration-700"
-                    style={{
-                      background: color ? `linear-gradient(90deg,${color}cc,${color}88)` : 'transparent',
-                      boxShadow: rs === 'running' ? `0 0 10px ${color}` : 'none',
-                      width: color ? '100%' : '0%',
-                    }} />
-                </div>
-                {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover/seg:opacity-100 pointer-events-none z-20 transition-opacity">
-                  <div className="glass-card text-[10px] px-2.5 py-1.5 rounded-lg whitespace-nowrap" style={{ borderRadius: 8 }}>
-                    <span className="font-medium text-blue-100">{s.label}</span>
-                    {r?.duration_seconds ? <span className="ml-1.5 font-mono" style={{ color: 'rgba(99,162,255,0.60)' }}>{r.duration_seconds}s</span> : null}
-                  </div>
-                </div>
-              </div>
+              <div
+                key={s.key}
+                className="flex-1 rounded-full transition-all duration-700"
+                style={{
+                  height: 1,
+                  background: done
+                    ? 'rgba(255,255,255,0.72)'
+                    : run
+                    ? 'rgba(255,255,255,0.35)'
+                    : 'rgba(255,255,255,0.10)',
+                }}
+              />
             )
           })}
         </div>
-        <div className="flex gap-1.5">
-          {STAGES.map(s => {
-            const r  = stages.find(sr => sr.stage_key === s.key)
-            const rs = r?.status || 'pending'
-            const color = PROGRESS_COLOR[rs]
-            return (
-              <div key={s.key} className="flex-1 flex justify-center">
-                <span className="text-[9px] font-bold tabular-nums" style={{ color: color ?? 'rgba(10,26,70,0.8)' }}>
-                  {s.index}
-                </span>
-              </div>
-            )
-          })}
+
+        {/* Minimal caption */}
+        <div className="flex items-center justify-between mt-2.5">
+          <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.20)' }}>
+            {succeededCount} / {STAGES.length}
+          </span>
+          {runningDef && (
+            <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.20)' }}>
+              {runningDef.label}
+            </span>
+          )}
         </div>
       </div>
     </div>
