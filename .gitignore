@@ -1,13 +1,33 @@
+# Python
 .env
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
 .venv/
 venv/
-artifacts/
-data/
 .pytest_cache/
 .ruff_cache/
 *.log
+
+# Build output
+dist/
+build/
+
+# Runtime data (generated at runtime, should not be committed)
+artifacts/
+data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+node_modules/
+
+# Mockup sandbox (canvas prototypes, not part of the main app)
+artifacts/mockup-sandbox/node_modules/
+artifacts/mockup-sandbox/dist/
+artifacts/mockup-sandbox/.replit-artifact/
+
+# OS
+.DS_Store
+Thumbs.db
