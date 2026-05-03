@@ -170,8 +170,11 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
         {/* Left panel: pipeline graph */}
         <div className="w-[300px] shrink-0 flex flex-col relative z-0"
           style={{
-            background: 'rgba(0,0,0,0.25)',
-            borderRight: '1px solid rgba(255,255,255,0.05)',
+            background: 'linear-gradient(180deg, rgba(8,12,28,0.75) 0%, rgba(3,7,18,0.85) 100%)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            borderRight: '1px solid rgba(255,255,255,0.07)',
+            boxShadow: 'inset -1px 0 0 rgba(51,112,255,0.05)',
           }}>
           <div className="px-4 pt-4 pb-2">
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">流水线进度</p>

@@ -16,7 +16,9 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
   useEffect(() => {
     if (artifact) {
       setContent('加载中...')
-      apiClient.getArtifactContent(artifact).then(setContent)
+      apiClient.getArtifactContent(artifact).then(data =>
+        setContent(typeof data === 'string' ? data : JSON.stringify(data, null, 2))
+      )
     }
   }, [artifact])
 

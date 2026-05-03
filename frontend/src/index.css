@@ -78,6 +78,32 @@ code, pre, .mono {
   75%, 100% { transform: scale(3.0); opacity: 0; }
 }
 
+@keyframes running-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(51,112,255,0.12),
+      0 0 28px rgba(51,112,255,0.32),
+      0 0 60px rgba(51,112,255,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.14),
+      inset 0 -1px 0 rgba(0,0,0,0.15);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(99,141,255,0.20),
+      0 0 40px rgba(51,112,255,0.50),
+      0 0 80px rgba(51,112,255,0.18),
+      inset 0 1px 0 rgba(255,255,255,0.18),
+      inset 0 -1px 0 rgba(0,0,0,0.15);
+  }
+}
+
+@keyframes stage-scan {
+  0%   { left: -3.5rem; opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { left: calc(100% + 3.5rem); opacity: 0; }
+}
+
 /* ── Utility classes ── */
 .blob-1 {
   animation: blob-drift 18s ease-in-out infinite;
@@ -107,6 +133,14 @@ code, pre, .mono {
 }
 .animate-ping-3 {
   animation: ping-3 1.6s cubic-bezier(0, 0, 0.2, 1) infinite 0.4s;
+}
+
+.stage-running {
+  animation: running-glow 2.4s ease-in-out infinite;
+}
+
+.animate-stage-scan {
+  animation: stage-scan 3.5s ease-in-out infinite;
 }
 
 /* ── Glass panels ── */

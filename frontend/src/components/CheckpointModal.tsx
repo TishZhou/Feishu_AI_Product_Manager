@@ -38,7 +38,9 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
       const artifact = artifacts.find(a => a.id === activeArtifactId)
       if (artifact) {
         setContent('加载中...')
-        apiClient.getArtifactContent(artifact).then(setContent)
+        apiClient.getArtifactContent(artifact).then(data =>
+          setContent(typeof data === 'string' ? data : JSON.stringify(data, null, 2))
+        )
       }
     }
   }, [activeArtifactId, artifacts])
