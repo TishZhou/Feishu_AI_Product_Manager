@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Editor } from '@monaco-editor/react'
 import { Check, X, AlertTriangle, RotateCcw } from 'lucide-react'
 import type { Checkpoint, Artifact } from '../types/api'
 import { STAGES } from '../types/api'
@@ -56,13 +55,12 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
         className="fixed inset-0 z-50 flex"
         style={{ background: 'rgba(3,7,18,0.85)', backdropFilter: 'blur(24px)' }}
       >
-        {/* Ambient blobs in modal */}
         <div className="absolute top-[-10%] left-[10%] w-[400px] h-[400px] rounded-full opacity-[0.08] pointer-events-none"
           style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }} />
         <div className="absolute bottom-[-5%] right-[5%] w-[350px] h-[350px] rounded-full opacity-[0.06] pointer-events-none"
           style={{ background: 'radial-gradient(circle, #3370ff 0%, transparent 70%)' }} />
 
-        {/* Left: code editor */}
+        {/* Left: code viewer */}
         <div className="w-3/5 flex flex-col"
           style={{
             background: '#0d1117',
@@ -89,27 +87,14 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
             )}
           </div>
 
-          {/* Monaco */}
-          <div className="flex-1">
-            <Editor
-              height="100%"
-              theme="vs-dark"
-              language={
-                relevantArtifacts.find(a => a.id === activeArtifactId)?.filename.endsWith('.json')
-                  ? 'json'
-                  : 'markdown'
-              }
-              value={content}
-              options={{
-                readOnly: true,
-                minimap: { enabled: false },
-                fontSize: 13,
-                lineHeight: 20,
-                padding: { top: 16 },
-                scrollBeyondLastLine: false,
-                renderLineHighlight: 'none',
-              }}
-            />
+          {/* Code viewer */}
+          <div className="flex-1 overflow-auto" style={{ background: '#0d1117' }}>
+            <pre
+              className="text-xs font-mono text-slate-300 p-4 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
+              style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
+            >
+              {content}
+            </pre>
           </div>
         </div>
 
@@ -118,7 +103,6 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
           style={{
             background: 'linear-gradient(180deg, rgba(10,15,28,0.98) 0%, rgba(3,7,18,0.98) 100%)',
           }}>
-          {/* Title */}
           <div className="flex items-start gap-3 mb-7">
             <div className="p-2.5 rounded-xl shrink-0 mt-0.5"
               style={{
@@ -137,7 +121,6 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
             </div>
           </div>
 
-          {/* Approve button */}
           <button
             onClick={() => approve.mutate({ id: checkpoint.id, decided_by: '人工审核', reason: '方案通过' })}
             disabled={approve.isPending}
@@ -147,14 +130,12 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
             批准并继续
           </button>
 
-          {/* Divider */}
           <div className="relative flex items-center gap-3 mb-5">
             <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
             <span className="text-[10px] text-slate-600 uppercase tracking-widest shrink-0">或拒绝</span>
             <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
           </div>
 
-          {/* Reject section */}
           <div className="rounded-2xl p-5 space-y-4"
             style={{
               background: 'rgba(239,68,68,0.04)',

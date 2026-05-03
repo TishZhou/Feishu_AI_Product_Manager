@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Editor } from '@monaco-editor/react'
 import { X, FileCode2 } from 'lucide-react'
 import type { Artifact } from '../types/api'
 import { STAGES } from '../types/api'
@@ -21,23 +20,10 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
     }
   }, [artifact])
 
-  const getLanguage = (filename: string) => {
-    if (filename.endsWith('.ts') || filename.endsWith('.tsx')) return 'typescript'
-    if (filename.endsWith('.js') || filename.endsWith('.jsx')) return 'javascript'
-    if (filename.endsWith('.json')) return 'json'
-    if (filename.endsWith('.py')) return 'python'
-    if (filename.endsWith('.md')) return 'markdown'
-    if (filename.endsWith('.css')) return 'css'
-    if (filename.endsWith('.html')) return 'html'
-    if (filename.endsWith('.patch') || filename.endsWith('.diff')) return 'diff'
-    return 'plaintext'
-  }
-
   return (
     <AnimatePresence>
       {artifact && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -47,7 +33,6 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
             style={{ background: 'rgba(3,7,18,0.6)', backdropFilter: 'blur(8px)' }}
           />
 
-          {/* Panel */}
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -87,24 +72,14 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
               </button>
             </div>
 
-            {/* Monaco Editor */}
-            <div className="flex-1">
-              <Editor
-                height="100%"
-                theme="vs-dark"
-                language={getLanguage(artifact.filename)}
-                value={content}
-                options={{
-                  readOnly: true,
-                  minimap: { enabled: true },
-                  fontSize: 13,
-                  lineHeight: 20,
-                  wordWrap: 'on',
-                  scrollBeyondLastLine: false,
-                  padding: { top: 16 },
-                  renderLineHighlight: 'gutter',
-                }}
-              />
+            {/* Code viewer */}
+            <div className="flex-1 overflow-auto" style={{ background: '#0d1117' }}>
+              <pre
+                className="text-xs font-mono text-slate-300 p-5 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
+                style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
+              >
+                {content}
+              </pre>
             </div>
           </motion.div>
         </>
