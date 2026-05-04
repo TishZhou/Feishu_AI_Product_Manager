@@ -7,6 +7,14 @@ from devflow.tools.test_runner import TEST_TOOL_SCHEMAS
 
 
 class TestGenerationAgent(BaseAgent):
+    required_inputs = [
+        ("solution_architecture", "solution_contract.json"),
+        ("detailed_spec", "detailed_spec.json"),
+        ("code_generation", "implementation_summary.md"),
+        ("code_generation", "generated_files_manifest.json"),
+    ]
+    output_artifacts = ["test_report.json"]
+
     def json_mode(self) -> bool:
         return True
 
@@ -22,9 +30,13 @@ class TestGenerationAgent(BaseAgent):
             spec = json.dumps(spec, indent=2, ensure_ascii=False)
 
         summary = self._get_artifact(ctx, "code_generation", "implementation_summary.md", "")
+        solution_contract = self._get_artifact(ctx, "solution_architecture", "solution_contract.json", "{}")
+        if isinstance(solution_contract, dict):
+            solution_contract = json.dumps(solution_contract, indent=2, ensure_ascii=False)
 
         return prompts.USER_TMPL.format(
             detailed_spec=spec,
+            solution_contract=solution_contract,
             implementation_summary=summary,
             repo_path=ctx.repo_path,
         )

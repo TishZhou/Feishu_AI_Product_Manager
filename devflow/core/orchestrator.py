@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -33,6 +34,9 @@ class PipelineOrchestrator:
         self._cp_events: dict[str, dict[int, asyncio.Event]] = {}
         # asyncio.Event per run_id — cleared=paused, set=running
         self._pause_events: dict[str, asyncio.Event] = {}
+        self._clarification_events: dict[str, asyncio.Event] = {}
+        self._clarification_answers: dict[str, str] = {}
+        self._clarification_completed: set[str] = set()
         # Stores the resolved checkpoint status after event is set
         self._cp_decisions: dict[str, dict[int, str]] = {}
 
@@ -42,6 +46,8 @@ class PipelineOrchestrator:
         self._cp_events[run_id] = {}
         self._pause_events[run_id] = asyncio.Event()
         self._pause_events[run_id].set()  # not paused initially
+        self._clarification_events[run_id] = asyncio.Event()
+        self._clarification_completed.discard(run_id)
         self._cp_decisions[run_id] = {}
 
     def pause(self, run_id: str) -> None:
@@ -62,6 +68,12 @@ class PipelineOrchestrator:
         if ev:
             ev.set()
 
+    def resolve_clarification(self, run_id: str, answers: str) -> None:
+        self._clarification_answers[run_id] = answers
+        ev = self._clarification_events.get(run_id)
+        if ev:
+            ev.set()
+
     def _get_cp_event(self, run_id: str, cp_number: int) -> asyncio.Event:
         events = self._cp_events.setdefault(run_id, {})
         if cp_number not in events:
@@ -71,6 +83,9 @@ class PipelineOrchestrator:
     def cleanup(self, run_id: str) -> None:
         self._cp_events.pop(run_id, None)
         self._pause_events.pop(run_id, None)
+        self._clarification_events.pop(run_id, None)
+        self._clarification_answers.pop(run_id, None)
+        self._clarification_completed.discard(run_id)
         self._cp_decisions.pop(run_id, None)
 
     # ── Main execution loop ────────────────────────────────────────────────────
@@ -111,6 +126,9 @@ class PipelineOrchestrator:
                 repo_path=pipeline_orm.repo_path,
                 provider=pipeline_orm.provider,
                 model=pipeline_orm.model,
+                reference_context=pipeline_orm.reference_context,
+                reference_sources=pipeline_orm.reference_sources,
+                clarification_answers="",
             )
 
         logger.info(
@@ -213,9 +231,42 @@ class PipelineOrchestrator:
                         run_id[:8], stage_def.key, saved_filenames, duration)
             await self._complete_stage(stage_result_id, saved_filenames, duration)
 
-            # ── Auto-apply patch after code_generation ────────────────────────
+            if stage_def.key == "requirement_analysis" and self._can_request_clarification(run_id, result.artifacts):
+                questions = self._build_clarification_payload(result.artifacts)
+                path = artifact_store.save("requirement_clarification.json", json.dumps(questions, ensure_ascii=False, indent=2))
+                await self._register_artifact(
+                    run_id,
+                    stage_def.key,
+                    "requirement_clarification.json",
+                    str(path),
+                    json.dumps(questions, ensure_ascii=False, indent=2),
+                )
+                await self._set_run_status(run_id, RunState.WAITING_FOR_CLARIFICATION)
+                logger.info("[RUN %s] ? requirement clarification needed", run_id[:8])
+
+                ev = self._clarification_events.setdefault(run_id, asyncio.Event())
+                ev.clear()
+                await ev.wait()
+
+                answer = self._clarification_answers.pop(run_id, "").strip()
+                if answer:
+                    self._clarification_completed.add(run_id)
+                    pipeline.clarification_answers = (
+                        f"{pipeline.clarification_answers}\n\n{answer}".strip()
+                        if pipeline.clarification_answers else answer
+                    )
+                await self._reject_stages_from(run_id, "requirement_analysis")
+                stage_list = stages_from("requirement_analysis")
+                i = 0
+                await self._set_run_status(run_id, RunState.RUNNING)
+                ev.clear()
+                continue
+
+            # ── Materialize generated files under artifacts only ──────────────
             if stage_def.key == "code_generation":
-                await self._auto_apply_patch(run_id, artifact_store, pipeline.repo_path)
+                workspace_path = await self._materialize_generated_files(run_id, artifact_store, pipeline.repo_path)
+                if workspace_path:
+                    pipeline.repo_path = workspace_path
 
             # ── Checkpoint check ──────────────────────────────────────────────
             if stage_def.checkpoint_after is not None:
@@ -256,21 +307,43 @@ class PipelineOrchestrator:
 
     # ── Private DB helpers ────────────────────────────────────────────────────
 
-    async def _auto_apply_patch(self, run_id: str, store: ArtifactStore, repo_path: str) -> None:
-        """Apply the code_diff.patch to the repo after code_generation succeeds."""
+    async def _materialize_generated_files(self, run_id: str, store: ArtifactStore, repo_path: str) -> str:
+        """Write generated full-file snapshots to artifacts without touching the repo."""
+        from devflow.artifacts.patch_materializer import materialize_patch_files
         from devflow.tools.patch_tools import apply_patch
         try:
             patch = store.load_parsed("code_diff.patch")
             if not patch or not isinstance(patch, str):
-                return
-            result = apply_patch(patch, repo_path)
-            if result.get("success"):
-                logger.info("[RUN %s] ✓ patch applied to repo", run_id[:8])
-            else:
-                # Already applied or conflicts — log but don't fail the pipeline
-                logger.warning("[RUN %s] patch apply skipped: %s", run_id[:8], result.get("stderr", "")[:200])
+                return ""
+            manifest = materialize_patch_files(patch, repo_path, store.base_dir)
+            workspace = store.base_dir / f"execution_workspace_{uuid.uuid4().hex[:8]}"
+            shutil.copytree(
+                repo_path,
+                workspace,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", "artifacts", "data", "uploads"),
+            )
+            apply_result = apply_patch(patch, str(workspace))
+            manifest["execution_workspace"] = str(workspace)
+            manifest["patch_applied_to_workspace"] = bool(apply_result.get("success"))
+            manifest["workspace_apply_error"] = apply_result.get("stderr") or apply_result.get("error", "")
+            store.artifact_path("generated_files_manifest.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            manifest_text = json.dumps(manifest, ensure_ascii=False, indent=2)
+            await self._register_artifact(
+                run_id,
+                "code_generation",
+                "generated_files_manifest.json",
+                str(store.artifact_path("generated_files_manifest.json")),
+                manifest_text,
+            )
+            logger.info("[RUN %s] ✓ generated file snapshots saved to artifacts (%d files)",
+                        run_id[:8], len(manifest.get("files", [])))
+            return str(workspace) if apply_result.get("success") else ""
         except Exception as e:
-            logger.warning("[RUN %s] patch apply error (non-fatal): %s", run_id[:8], e)
+            logger.warning("[RUN %s] generated file materialization error (non-fatal): %s", run_id[:8], e)
+            return ""
 
     def _load_prior(self, store: ArtifactStore, stage_keys: list[str]) -> dict[str, dict]:
         from devflow.core.pipeline_definition import STAGE_BY_KEY
@@ -286,6 +359,48 @@ class PipelineOrchestrator:
                 except FileNotFoundError:
                     pass
         return result
+
+    def _needs_requirement_clarification(self, artifacts: dict[str, str]) -> bool:
+        try:
+            spec = json.loads(artifacts.get("requirement_spec.json", "{}"))
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(spec, dict):
+            return False
+
+        if spec.get("open_questions"):
+            return True
+        quality_check = spec.get("quality_check") or {}
+        if isinstance(quality_check, dict):
+            if quality_check.get("missing_critical_info") or quality_check.get("ambiguities"):
+                return True
+            if quality_check.get("ready_for_stage2_architecture") is False:
+                return True
+        try:
+            return float(spec.get("confidence_score", 1)) < 0.7
+        except (TypeError, ValueError):
+            return False
+
+    def _can_request_clarification(self, run_id: str, artifacts: dict[str, str]) -> bool:
+        return run_id not in self._clarification_completed and self._needs_requirement_clarification(artifacts)
+
+    def _build_clarification_payload(self, artifacts: dict[str, str]) -> dict:
+        try:
+            spec = json.loads(artifacts.get("requirement_spec.json", "{}"))
+        except json.JSONDecodeError:
+            spec = {}
+        quality_check = spec.get("quality_check") if isinstance(spec, dict) else {}
+        if not isinstance(quality_check, dict):
+            quality_check = {}
+        return {
+            "title": spec.get("title", "需求需要澄清") if isinstance(spec, dict) else "需求需要澄清",
+            "summary": spec.get("summary", "") if isinstance(spec, dict) else "",
+            "open_questions": spec.get("open_questions", []) if isinstance(spec, dict) else [],
+            "missing_critical_info": quality_check.get("missing_critical_info", []),
+            "ambiguities": quality_check.get("ambiguities", []),
+            "confidence_score": spec.get("confidence_score") if isinstance(spec, dict) else None,
+            "instruction": "请回答这些问题。提交后系统会带着你的补充说明重新执行需求分析。",
+        }
 
     async def _get_resume_stage(self, run_id: str) -> str:
         """Return the stage key to start/resume from."""
@@ -393,6 +508,14 @@ class PipelineOrchestrator:
             "text/x-patch" if filename.endswith(".patch") else "text/markdown"
         )
         async with AsyncSessionLocal() as session:
+            from sqlalchemy import delete
+            await session.execute(
+                delete(Artifact).where(
+                    Artifact.run_id == run_id,
+                    Artifact.stage_key == stage_key,
+                    Artifact.filename == filename,
+                )
+            )
             art = Artifact(
                 id=str(uuid.uuid4()),
                 run_id=run_id,

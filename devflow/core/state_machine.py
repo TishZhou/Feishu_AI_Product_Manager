@@ -5,6 +5,7 @@ class RunState(str, Enum):
     CREATED = "created"
     RUNNING = "running"
     WAITING_FOR_APPROVAL = "waiting_for_approval"
+    WAITING_FOR_CLARIFICATION = "waiting_for_clarification"
     PAUSED = "paused"
     FAILED = "failed"
     COMPLETED = "completed"
@@ -22,8 +23,15 @@ class StageState(str, Enum):
 
 VALID_RUN_TRANSITIONS: dict[RunState, set[RunState]] = {
     RunState.CREATED: {RunState.RUNNING},
-    RunState.RUNNING: {RunState.WAITING_FOR_APPROVAL, RunState.FAILED, RunState.COMPLETED, RunState.PAUSED},
+    RunState.RUNNING: {
+        RunState.WAITING_FOR_APPROVAL,
+        RunState.WAITING_FOR_CLARIFICATION,
+        RunState.FAILED,
+        RunState.COMPLETED,
+        RunState.PAUSED,
+    },
     RunState.WAITING_FOR_APPROVAL: {RunState.RUNNING, RunState.FAILED, RunState.TERMINATED},
+    RunState.WAITING_FOR_CLARIFICATION: {RunState.RUNNING, RunState.FAILED, RunState.TERMINATED},
     RunState.PAUSED: {RunState.RUNNING, RunState.TERMINATED},
     RunState.FAILED: set(),
     RunState.COMPLETED: set(),

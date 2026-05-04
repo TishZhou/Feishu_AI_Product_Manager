@@ -24,13 +24,17 @@ After the 2 tool calls, output ONLY valid JSON (no markdown fences):
 Rules:
 - Exactly 2 tool calls then JSON. Do NOT browse the repo, do NOT retry.
 - Write tests that import from the module paths in the implementation summary.
-- Base test cases on the acceptance criteria in the spec."""
+- Base test cases on detailed_spec.traceability, solution_contract.acceptance_mapping, and acceptance criteria.
+- Include both requirement coverage tests and a lightweight regression/smoke test when possible."""
 
 USER_TMPL = """Implementation summary (shows exactly what files/functions were created):
 {implementation_summary}
 
 Detailed spec (use acceptance criteria to design test cases):
 {detailed_spec}
+
+Solution contract (use acceptance_mapping and related tests):
+{solution_contract}
 
 Repository: {repo_path}
 

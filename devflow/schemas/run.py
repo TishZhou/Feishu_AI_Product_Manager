@@ -33,3 +33,8 @@ class StageResultRead(BaseModel):
     output_artifact_keys: str
 
     model_config = {"from_attributes": True}
+
+
+class ClarificationRequest(BaseModel):
+    answered_by: str = "user"
+    answers: str

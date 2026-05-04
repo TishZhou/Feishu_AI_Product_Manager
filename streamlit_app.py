@@ -11,6 +11,8 @@ import time
 import requests
 import streamlit as st
 
+from devflow.services.document_context import SUPPORTED_EXTENSIONS, extract_reference_documents
+
 API = "http://localhost:8000"
 REPO_PATH = os.path.abspath(os.path.dirname(__file__))
 
@@ -27,8 +29,15 @@ STAGE_KEYS = [s[0] for s in STAGES]
 
 CHECKPOINT_AFTER = {"detailed_spec": 1, "code_review": 2}
 CP_ARTIFACTS = {
-    1: ["requirement_spec.json", "solution_design.md", "detailed_spec.json"],
-    2: ["code_diff.patch", "implementation_summary.md", "test_report.json", "review_report.md"],
+    1: [
+        "requirement_spec.prd.md",
+        "solution_design.md",
+        "solution_contract.json",
+        "detailed_spec.json",
+        "repo_context_summary.json",
+        "requirement_spec.json",
+    ],
+    2: ["code_diff.patch", "generated_files_manifest.json", "implementation_summary.md", "test_report.json", "review_report.md"],
 }
 CP_LABEL = {
     1: "方案审核 — 确认 AI 理解的需求和技术方案是否正确",
@@ -38,6 +47,7 @@ CP_LABEL = {
 STAGE_STATUS_ICON = {
     "pending":   ("⬜", "gray"),
     "running":   ("🔄", "blue"),
+    "waiting_for_clarification": ("❓", "orange"),
     "succeeded": ("✅", "green"),
     "failed":    ("❌", "red"),
     "rejected":  ("↩️", "orange"),
@@ -83,6 +93,27 @@ def render_artifact(filename: str, file_path: str):
         st.text(content)
 
 
+def render_agent_contracts():
+    agents = api("GET", "/api/agents", silent=True)
+    if not agents:
+        st.caption("后端未连接，暂无法加载契约")
+        return
+
+    for stage in agents.get("stages", []):
+        st.markdown(f"**{stage['index']}. {stage['agent']}**")
+        inputs = stage.get("required_inputs") or []
+        if inputs:
+            st.caption("Inputs")
+            for item in inputs:
+                st.code(f"{item['stage_key']}/{item['filename']}", language=None)
+        else:
+            st.caption("Inputs: none")
+
+        st.caption("Outputs")
+        for filename in stage.get("output_artifacts", []):
+            st.code(filename, language=None)
+
+
 # ── Page: Home ────────────────────────────────────────────────────────────────
 
 def page_home():
@@ -104,6 +135,13 @@ def page_home():
         label_visibility="collapsed",
     )
 
+    uploaded_docs = st.file_uploader(
+        "参考文档（可选，支持 PDF / DOCX / DOC / TXT / MD）",
+        type=[ext.lstrip(".") for ext in sorted(SUPPORTED_EXTENSIONS)],
+        accept_multiple_files=True,
+        help="上传 PRD、会议纪要、调研材料或相关说明，需求分析 Agent 会把这些内容作为参考上下文。",
+    )
+
     col1, col2 = st.columns([2, 3])
     with col1:
         provider = st.selectbox(
@@ -120,12 +158,27 @@ def page_home():
     st.write("")
     if st.button("▶ 开始运行", type="primary", use_container_width=True, disabled=not requirement.strip()):
         with st.status("正在创建任务...", expanded=True) as s:
+            reference_context = ""
+            reference_sources = ""
+            if uploaded_docs:
+                st.write("解析参考文档...")
+                try:
+                    reference_context, reference_sources = extract_reference_documents(
+                        [(doc.name, doc.getvalue()) for doc in uploaded_docs]
+                    )
+                    st.write(f"✅ 已解析 {len(uploaded_docs)} 个参考文档")
+                except Exception as e:
+                    st.error(f"参考文档解析失败：{e}")
+                    return
+
             st.write("创建 Pipeline...")
             pipeline = api("POST", "/api/pipelines", json={
                 "name": requirement.strip()[:60],
                 "description": requirement.strip(),
                 "task_type": "feature",
                 "repo_path": REPO_PATH,
+                "reference_context": reference_context,
+                "reference_sources": reference_sources,
                 "provider": provider,
                 "model": model.strip(),
             })
@@ -163,6 +216,7 @@ def page_running():
         "created":              ("🟡", "正在初始化 AI 引擎..."),
         "running":              ("🔵", "AI 正在工作中..."),
         "waiting_for_approval": ("🟠", "等待你的审核"),
+        "waiting_for_clarification": ("🟠", "需求需要你补充澄清"),
         "paused":               ("🟠", "已暂停"),
         "failed":               ("🔴", "运行失败"),
         "completed":            ("🟢", "全部完成！"),
@@ -259,6 +313,10 @@ def page_running():
             _render_checkpoint(run_id, waiting_cp)
         return
 
+    if status == "waiting_for_clarification":
+        _render_clarification(run_id)
+        return
+
     # ── Pause / Stop controls ────────────────────────────────────────────────
     col_pause, col_stop, _ = st.columns([1, 1, 3])
     with col_pause:
@@ -286,6 +344,61 @@ def page_running():
 
 
 # ── Checkpoint panel ──────────────────────────────────────────────────────────
+
+def _render_clarification(run_id: str):
+    st.markdown("### ❓ 需求澄清")
+    st.info("Stage 1 发现部分需求会影响后续架构或验收判断。请补充说明，系统会重新执行需求分析。")
+
+    artifacts = api("GET", f"/api/runs/{run_id}/artifacts", silent=True) or []
+    artifact_map = {a["filename"]: a["file_path"] for a in artifacts}
+    payload = {}
+    path = artifact_map.get("requirement_clarification.json")
+    if path:
+        try:
+            payload = json.loads(open(path, encoding="utf-8").read())
+        except Exception:
+            payload = {}
+
+    if payload.get("summary"):
+        st.markdown("**当前理解：**")
+        st.write(payload["summary"])
+
+    questions = payload.get("open_questions") or []
+    missing = payload.get("missing_critical_info") or []
+    ambiguities = payload.get("ambiguities") or []
+
+    if questions:
+        st.markdown("**待确认问题**")
+        for item in questions:
+            st.markdown(f"- {item}")
+    if missing:
+        st.markdown("**缺失的关键信息**")
+        for item in missing:
+            st.markdown(f"- {item}")
+    if ambiguities:
+        st.markdown("**当前歧义**")
+        for item in ambiguities:
+            st.markdown(f"- {item}")
+
+    answer = st.text_area(
+        "你的补充说明",
+        placeholder="逐条回答上面的问题。也可以补充范围、优先级、边界条件、验收标准等信息。",
+        height=180,
+        key="clarification_answers",
+    )
+    if st.button("提交澄清并重新分析", type="primary", use_container_width=True):
+        if not answer.strip():
+            st.warning("请先填写补充说明")
+            return
+        res = api("POST", f"/api/runs/{run_id}/clarifications", json={
+            "answered_by": "user",
+            "answers": answer.strip(),
+        })
+        if res:
+            st.success("已提交澄清，正在重新分析需求...")
+            time.sleep(1)
+            st.rerun()
+
 
 def _render_checkpoint(run_id: str, cp: dict):
     cp_num = cp["checkpoint_number"]
@@ -381,10 +494,14 @@ def page_done():
     st.markdown("### 📁 查看所有产物")
 
     file_order = [
-        ("requirement_spec.json",    "📋 需求规格"),
+        ("requirement_spec.prd.md",  "📋 PRD 需求文档"),
+        ("requirement_spec.json",    "📋 需求规格 JSON"),
+        ("repo_context_summary.json","🧭 Repo 上下文"),
         ("solution_design.md",       "🏗️ 架构设计"),
+        ("solution_contract.json",   "🧾 方案 Contract"),
         ("detailed_spec.json",       "📝 详细规格"),
         ("code_diff.patch",          "💻 代码变更"),
+        ("generated_files_manifest.json", "📦 生成文件清单"),
         ("implementation_summary.md","📄 实现说明"),
         ("test_report.json",         "🧪 测试报告"),
         ("review_report.md",         "🔍 Review 报告"),
@@ -417,6 +534,11 @@ def main():
     with st.sidebar:
         st.markdown("# ⚙️ DevFlow Engine")
         st.caption("AI 驱动的全流程开发助手")
+        st.divider()
+
+        with st.expander("Agent I/O Contracts", expanded=False):
+            render_agent_contracts()
+
         st.divider()
 
         if st.session_state.page != "home":

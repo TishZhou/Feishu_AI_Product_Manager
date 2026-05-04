@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from devflow.core.pipeline_definition import StageDefinition
@@ -34,8 +34,12 @@ class AgentResult:
 
 
 class BaseAgent(ABC):
+    required_inputs: ClassVar[list[tuple[str, str]]] = []
+    output_artifacts: ClassVar[list[str]] = []
+
     def __init__(self, stage_def: "StageDefinition") -> None:
         self.stage_def = stage_def
+        self._validate_contract()
 
     async def run(self, ctx: AgentContext) -> AgentResult:
         from devflow.providers.router import ToolDispatcher
@@ -48,6 +52,11 @@ class BaseAgent(ABC):
             write_file,
         )
         from devflow.tools.test_runner import TEST_TOOL_SCHEMAS, run_test
+
+        missing_inputs = self._missing_required_inputs(ctx)
+        if missing_inputs:
+            formatted = ", ".join(f"{stage}/{filename}" for stage, filename in missing_inputs)
+            return self._fail(ctx, f"Missing required input artifact(s): {formatted}")
 
         # Build a tool dispatcher bound to this run's repo_path
         dispatcher = ToolDispatcher()
@@ -97,10 +106,42 @@ class BaseAgent(ABC):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def _validate_contract(self) -> None:
+        if not self.output_artifacts:
+            raise ValueError(f"{self.__class__.__name__} must declare output_artifacts")
+        if self.output_artifacts != self.stage_def.output_artifacts:
+            raise ValueError(
+                f"{self.__class__.__name__} output_artifacts mismatch: "
+                f"agent={self.output_artifacts!r}, stage={self.stage_def.output_artifacts!r}"
+            )
+
+        declared_input_stages = {stage for stage, _ in self.required_inputs}
+        available_input_stages = set(self.stage_def.reads_from_stages)
+        missing_stage_links = sorted(declared_input_stages - available_input_stages)
+        if missing_stage_links:
+            raise ValueError(
+                f"{self.__class__.__name__} requires input stages not declared in pipeline: "
+                f"{missing_stage_links!r}"
+            )
+
+    def _missing_required_inputs(self, ctx: AgentContext) -> list[tuple[str, str]]:
+        missing = []
+        for stage_key, filename in self.required_inputs:
+            if filename not in ctx.artifacts.get(stage_key, {}):
+                missing.append((stage_key, filename))
+        return missing
+
     def _get_artifact(self, ctx: AgentContext, stage_key: str, filename: str, default: Any = "") -> Any:
         return ctx.artifacts.get(stage_key, {}).get(filename, default)
 
     def _ok(self, ctx: AgentContext, artifacts: dict[str, str], raw: str) -> AgentResult:
+        actual = list(artifacts)
+        if actual != self.output_artifacts:
+            return self._fail(
+                ctx,
+                f"Output artifact contract mismatch: expected {self.output_artifacts!r}, got {actual!r}",
+                raw,
+            )
         return AgentResult(stage_key=ctx.stage_key, success=True, artifacts=artifacts, raw_llm_response=raw)
 
     def _fail(self, ctx: AgentContext, error: str, raw: str = "") -> AgentResult:

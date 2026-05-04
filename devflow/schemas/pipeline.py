@@ -8,6 +8,8 @@ class PipelineCreate(BaseModel):
     description: str
     task_type: str = "feature"
     repo_path: str
+    reference_context: str = ""
+    reference_sources: str = ""
     provider: str = "openai"
     model: str = ""
 
@@ -18,6 +20,8 @@ class PipelineRead(BaseModel):
     description: str
     task_type: str
     repo_path: str
+    reference_context: str
+    reference_sources: str
     provider: str
     model: str
     created_at: datetime

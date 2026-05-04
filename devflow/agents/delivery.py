@@ -7,6 +7,14 @@ _SEPARATOR = "---FINAL_DIFF---"
 
 
 class DeliveryAgent(BaseAgent):
+    required_inputs = [
+        ("code_generation", "code_diff.patch"),
+        ("code_generation", "implementation_summary.md"),
+        ("test_generation", "test_report.json"),
+        ("code_review", "review_report.md"),
+    ]
+    output_artifacts = ["delivery_summary.md", "final_diff.patch"]
+
     def build_system_prompt(self, ctx: AgentContext) -> str:
         return prompts.SYSTEM
 

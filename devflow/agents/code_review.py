@@ -5,6 +5,15 @@ from devflow.agents.prompts import code_review as prompts
 
 
 class CodeReviewAgent(BaseAgent):
+    required_inputs = [
+        ("solution_architecture", "solution_contract.json"),
+        ("detailed_spec", "detailed_spec.json"),
+        ("code_generation", "code_diff.patch"),
+        ("code_generation", "generated_files_manifest.json"),
+        ("test_generation", "test_report.json"),
+    ]
+    output_artifacts = ["review_report.md"]
+
     def build_system_prompt(self, ctx: AgentContext) -> str:
         return prompts.SYSTEM
 
@@ -16,11 +25,15 @@ class CodeReviewAgent(BaseAgent):
         spec = self._get_artifact(ctx, "detailed_spec", "detailed_spec.json", "{}")
         if isinstance(spec, dict):
             spec = json.dumps(spec, indent=2, ensure_ascii=False)
+        solution_contract = self._get_artifact(ctx, "solution_architecture", "solution_contract.json", "{}")
+        if isinstance(solution_contract, dict):
+            solution_contract = json.dumps(solution_contract, indent=2, ensure_ascii=False)
 
         return prompts.USER_TMPL.format(
             code_diff=patch,
             test_report=test_report,
             detailed_spec=spec,
+            solution_contract=solution_contract,
         )
 
     def parse_response(self, response: str, ctx: AgentContext) -> AgentResult:

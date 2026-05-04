@@ -2,9 +2,18 @@ import json
 
 from devflow.agents.base import AgentContext, AgentResult, BaseAgent
 from devflow.agents.prompts import detailed_spec as prompts
+from devflow.agents.solution_architecture import _extract_json_object
 
 
 class DetailedSpecAgent(BaseAgent):
+    required_inputs = [
+        ("requirement_analysis", "requirement_spec.json"),
+        ("solution_architecture", "repo_context_summary.json"),
+        ("solution_architecture", "solution_design.md"),
+        ("solution_architecture", "solution_contract.json"),
+    ]
+    output_artifacts = ["detailed_spec.json"]
+
     def json_mode(self) -> bool:
         return True
 
@@ -20,17 +29,23 @@ class DetailedSpecAgent(BaseAgent):
             req_spec = json.dumps(req_spec, indent=2, ensure_ascii=False)
 
         solution = self._get_artifact(ctx, "solution_architecture", "solution_design.md", "")
+        solution_contract = self._get_artifact(ctx, "solution_architecture", "solution_contract.json", "{}")
+        if isinstance(solution_contract, dict):
+            solution_contract = json.dumps(solution_contract, indent=2, ensure_ascii=False)
+        repo_context = self._get_artifact(ctx, "solution_architecture", "repo_context_summary.json", "{}")
+        if isinstance(repo_context, dict):
+            repo_context = json.dumps(repo_context, indent=2, ensure_ascii=False)
 
         return prompts.USER_TMPL.format(
             requirement_spec=req_spec,
             solution_design=solution,
+            solution_contract=solution_contract,
+            repo_context_summary=repo_context,
         )
 
     def parse_response(self, response: str, ctx: AgentContext) -> AgentResult:
         response = response.strip()
-        if response.startswith("```"):
-            lines = response.splitlines()
-            response = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        response = _extract_json_object(response)
 
         try:
             json.loads(response)

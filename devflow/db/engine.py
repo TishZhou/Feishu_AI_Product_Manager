@@ -3,6 +3,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
 
 from devflow.config import settings
 
@@ -30,6 +31,13 @@ async def create_tables() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if "sqlite" in settings.DATABASE_URL:
+            rows = await conn.execute(text("PRAGMA table_info(pipelines)"))
+            columns = {row[1] for row in rows}
+            if "reference_context" not in columns:
+                await conn.execute(text("ALTER TABLE pipelines ADD COLUMN reference_context TEXT DEFAULT ''"))
+            if "reference_sources" not in columns:
+                await conn.execute(text("ALTER TABLE pipelines ADD COLUMN reference_sources TEXT DEFAULT ''"))
 
 
 async def get_session() -> AsyncSession:  # type: ignore[misc]

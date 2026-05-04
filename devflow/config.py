@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # App
     DEFAULT_PROVIDER: str = "openai"
     ARTIFACTS_DIR: str = "artifacts"
+    UPLOADS_DIR: str = "uploads"
     DATABASE_URL: str = "sqlite+aiosqlite:///data/devflow.db"
 
 

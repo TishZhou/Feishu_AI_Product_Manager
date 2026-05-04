@@ -25,6 +25,8 @@ async def create_pipeline(body: PipelineCreate, session: AsyncSession = Depends(
         description=body.description,
         task_type=body.task_type,
         repo_path=str(repo.resolve()),
+        reference_context=body.reference_context,
+        reference_sources=body.reference_sources,
         provider=body.provider,
         model=body.model,
     )

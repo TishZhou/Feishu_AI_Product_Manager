@@ -38,13 +38,13 @@ def _api(server: str, method: str, path: str, **kwargs) -> dict:
 
 def _poll_run(server: str, run_id: str, interval: float = 5.0) -> dict:
     terminal = {"completed", "failed", "terminated"}
-    waiting = "waiting_for_approval"
+    waiting = {"waiting_for_approval", "waiting_for_clarification"}
     while True:
         run = _api(server, "GET", f"/api/runs/{run_id}")
         status = run["status"]
         stage = run.get("current_stage", "")
         print(f"  status={status:<25} stage={stage}", end="\r", flush=True)
-        if status in terminal or status == waiting:
+        if status in terminal or status in waiting:
             print()
             return run
         time.sleep(interval)
@@ -81,7 +81,7 @@ def _handle_checkpoint(server: str, run_id: str) -> None:
 
     # Show relevant artifacts
     if cp_num == 1:
-        for f in ["requirement_spec.json", "solution_design.md", "detailed_spec.json"]:
+        for f in ["requirement_spec.prd.md", "solution_design.md", "detailed_spec.json", "requirement_spec.json"]:
             _print_artifact(server, run_id, f)
     else:
         for f in ["code_diff.patch", "test_report.json", "review_report.md"]:
@@ -110,6 +110,17 @@ def _handle_checkpoint(server: str, run_id: str) -> None:
             body["retry_stage_key"] = retry_stage
         _api(server, "POST", f"/api/checkpoints/{cp_id}/reject", json=body)
         print(f"  ✗ Checkpoint {cp_num} REJECTED. Pipeline retrying from stage...")
+
+
+def _handle_clarification(server: str, run_id: str) -> None:
+    _print_artifact(server, run_id, "requirement_clarification.json")
+    print("\n[CLARIFICATION] Requirement analysis needs your input.")
+    answer = input("  Your clarification: ").strip() or "No additional clarification provided."
+    _api(server, "POST", f"/api/runs/{run_id}/clarifications", json={
+        "answered_by": "demo-user",
+        "answers": answer,
+    })
+    print("  ✓ Clarification submitted. Pipeline rerunning requirement analysis...")
 
 
 def main():
@@ -167,6 +178,10 @@ def main():
         if status == "waiting_for_approval":
             _handle_checkpoint(server, run_id)
             # After decision, continue polling
+            continue
+
+        if status == "waiting_for_clarification":
+            _handle_clarification(server, run_id)
             continue
 
         if status == "completed":

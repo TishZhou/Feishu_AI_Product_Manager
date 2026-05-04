@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from devflow.api import checkpoints, meta, pipelines, runs
+from devflow.api import checkpoints, meta, pipelines, reference_documents, runs
 from devflow.db.engine import create_tables
 
 
@@ -26,30 +26,16 @@ logger = logging.getLogger("devflow")
 
 
 def _cleanup_generated_files() -> None:
-    """Remove files that were written to the repo by previous pipeline runs."""
-    import re
-    from pathlib import Path
-    from devflow.config import settings
+    """Remove only known temporary generated files from older runs.
 
-    artifacts_root = Path(settings.ARTIFACTS_DIR)
+    Generated code is now stored under artifacts and applied only to an
+    artifacts-local execution workspace. Never scan historical patches and
+    unlink source files from the main repo.
+    """
+    from pathlib import Path
+
     repo_root = Path(__file__).parent.parent
     removed = []
-
-    for patch_file in artifacts_root.glob("*/code_diff.patch"):
-        try:
-            patch_text = patch_file.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        # Find every "new file" created by the patch
-        for match in re.finditer(r"^\+\+\+ b/(.+)$", patch_text, re.MULTILINE):
-            rel_path = match.group(1).strip()
-            # Never delete source files — only clean up generated output files
-            if rel_path.startswith("devflow/") or rel_path.startswith("devflow\\"):
-                continue
-            target = repo_root / rel_path
-            if target.exists() and target.is_file():
-                target.unlink()
-                removed.append(rel_path)
 
     # Always clean up the generated test file
     test_generated = repo_root / "tests" / "test_generated.py"
@@ -66,7 +52,7 @@ async def _cancel_stale_runs() -> None:
     from sqlalchemy import select, update
     from devflow.db.engine import AsyncSessionLocal
     from devflow.db.models import PipelineRun
-    stale = ("created", "running", "waiting_for_approval", "paused")
+    stale = ("created", "running", "waiting_for_approval", "waiting_for_clarification", "paused")
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(PipelineRun).where(PipelineRun.status.in_(stale))
@@ -107,6 +93,7 @@ app.include_router(pipelines.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(checkpoints.router, prefix="/api")
 app.include_router(meta.router, prefix="/api")
+app.include_router(reference_documents.router, prefix="/api")
 
 
 @app.get("/", include_in_schema=False)

@@ -8,6 +8,13 @@ _SEPARATOR = "---IMPLEMENTATION_SUMMARY---"
 
 
 class CodeGenerationAgent(BaseAgent):
+    required_inputs = [
+        ("solution_architecture", "solution_design.md"),
+        ("solution_architecture", "solution_contract.json"),
+        ("detailed_spec", "detailed_spec.json"),
+    ]
+    output_artifacts = ["code_diff.patch", "implementation_summary.md", "generated_files_manifest.json"]
+
     def build_system_prompt(self, ctx: AgentContext) -> str:
         return prompts.SYSTEM
 
@@ -16,8 +23,12 @@ class CodeGenerationAgent(BaseAgent):
         if isinstance(spec, dict):
             spec = json.dumps(spec, indent=2, ensure_ascii=False)
         solution = self._get_artifact(ctx, "solution_architecture", "solution_design.md", "")
+        solution_contract = self._get_artifact(ctx, "solution_architecture", "solution_contract.json", "{}")
+        if isinstance(solution_contract, dict):
+            solution_contract = json.dumps(solution_contract, indent=2, ensure_ascii=False)
         return prompts.USER_TMPL.format(
             detailed_spec=spec,
+            solution_contract=solution_contract,
             solution_design=solution,
             repo_path=ctx.repo_path,
         )
@@ -47,4 +58,10 @@ class CodeGenerationAgent(BaseAgent):
         return self._ok(ctx, {
             "code_diff.patch": patch,
             "implementation_summary.md": summary,
+            "generated_files_manifest.json": json.dumps({
+                "applied_to_repo": False,
+                "mode": "artifact_only",
+                "files": [],
+                "status": "pending_materialization",
+            }, ensure_ascii=False, indent=2),
         }, response)

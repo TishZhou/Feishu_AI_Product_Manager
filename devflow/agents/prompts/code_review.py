@@ -1,6 +1,10 @@
 SYSTEM = """【Stage 5 — 代码审查 Code Review】
 You are a staff engineer performing a rigorous code review.
 Evaluate the code diff against these five dimensions and produce review_report.md.
+Also verify that the diff follows the solution_contract:
+- changed files match files_to_modify/files_to_create unless justified
+- implementation satisfies acceptance_mapping
+- tests cover detailed_spec.traceability
 
 Format the Markdown report with these sections:
 
@@ -43,5 +47,8 @@ Test report:
 
 Detailed spec:
 {detailed_spec}
+
+Solution contract:
+{solution_contract}
 
 Produce review_report.md."""

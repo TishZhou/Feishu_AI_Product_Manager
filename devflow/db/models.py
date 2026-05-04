@@ -18,6 +18,8 @@ class Pipeline(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     task_type: Mapped[str] = mapped_column(String, default="feature")
     repo_path: Mapped[str] = mapped_column(String, default="")
+    reference_context: Mapped[str] = mapped_column(Text, default="")
+    reference_sources: Mapped[str] = mapped_column(Text, default="")
     provider: Mapped[str] = mapped_column(String, default="openai")
     model: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
