@@ -1,17 +1,70 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, FileCode2 } from 'lucide-react'
 import type { Artifact } from '../types/api'
 import { STAGES } from '../types/api'
 import { apiClient } from '../lib/api'
+import { parseTestReport, TestReportView } from './TestReportView'
 
 interface ArtifactViewerProps {
   artifact: Artifact | null
   onClose: () => void
 }
 
+function DiffViewer({ text }: { text: string }) {
+  const lines = text.split('\n')
+  return (
+    <div className="text-xs font-mono leading-5 min-h-full py-3"
+      style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
+      {lines.map((line, idx) => {
+        const isAdded = line.startsWith('+') && !line.startsWith('+++')
+        const isDeleted = line.startsWith('-') && !line.startsWith('---')
+        const isHunk = line.startsWith('@@')
+        const isHeader = line.startsWith('diff --git') || line.startsWith('---') || line.startsWith('+++')
+        const bg = isAdded
+          ? 'rgba(16,185,129,0.15)'
+          : isDeleted
+            ? 'rgba(239,68,68,0.15)'
+            : isHunk
+              ? 'rgba(51,112,255,0.14)'
+              : isHeader
+                ? 'rgba(255,255,255,0.045)'
+                : 'transparent'
+        const color = isAdded
+          ? 'rgba(167,243,208,0.95)'
+          : isDeleted
+            ? 'rgba(254,202,202,0.95)'
+            : isHunk
+              ? 'rgba(191,219,254,0.95)'
+              : isHeader
+                ? 'rgba(226,232,240,0.80)'
+                : 'rgba(203,213,225,0.82)'
+        const borderColor = isAdded
+          ? 'rgba(16,185,129,0.55)'
+          : isDeleted
+            ? 'rgba(239,68,68,0.55)'
+            : 'transparent'
+        return (
+          <div key={idx} className="flex min-w-max"
+            style={{ background: bg, color, borderLeft: `2px solid ${borderColor}` }}>
+            <span className="select-none text-right shrink-0 px-3"
+              style={{ width: 56, color: 'rgba(148,163,184,0.45)' }}>
+              {idx + 1}
+            </span>
+            <span className="whitespace-pre-wrap break-words pr-4 flex-1">{line || ' '}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
   const [content, setContent] = useState('')
+  const isVisualTestReport = useMemo(
+    () => artifact?.filename === 'test_report.json' && !!parseTestReport(content),
+    [artifact?.filename, content],
+  )
 
   useEffect(() => {
     if (artifact) {
@@ -63,6 +116,9 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                   <p className="text-slate-500 text-[11px] font-mono">
                     {(artifact.size_bytes / 1024).toFixed(1)} KB · {STAGES.find(s => s.key === artifact.stage_key)?.label ?? artifact.stage_key}
                   </p>
+                  <p className="text-slate-400 text-[10px] font-mono truncate" title={`artifacts/${artifact.run_id}/`}>
+                    artifact folder: artifacts/{artifact.run_id}/
+                  </p>
                 </div>
               </div>
 
@@ -76,12 +132,18 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
 
             {/* Code viewer */}
             <div className="flex-1 overflow-auto" style={{ background: '#0d1117' }}>
-              <pre
-                className="text-xs font-mono text-slate-300 p-5 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
-                style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
-            >
-              {content || '加载中...'}
-            </pre>
+              {isVisualTestReport ? (
+                <TestReportView content={content} />
+              ) : artifact.filename.endsWith('.patch') ? (
+                <DiffViewer text={content || '加载中...'} />
+              ) : (
+                <pre
+                  className="text-xs font-mono text-slate-300 p-5 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
+                  style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
+                >
+                  {content || '加载中...'}
+                </pre>
+              )}
             </div>
           </motion.div>
         </>

@@ -49,6 +49,7 @@ class BaseAgent(ABC):
             list_dir,
             read_file,
             search_code,
+            edit_file,
             write_file,
         )
         from devflow.tools.test_runner import TEST_TOOL_SCHEMAS, run_test
@@ -66,6 +67,7 @@ class BaseAgent(ABC):
         dispatcher.register("read_file", lambda path: read_file(path, repo))
         dispatcher.register("search_code", lambda query, path_glob="**/*": search_code(query, repo, path_glob))
         dispatcher.register("write_file", lambda path, content: write_file(path, content, repo))
+        dispatcher.register("edit_file", lambda path, old_str, new_str: edit_file(path, old_str, new_str, repo))
         dispatcher.register("apply_patch", lambda patch_content, check_only=False: apply_patch(patch_content, repo, check_only))
         dispatcher.register("run_test", lambda test_path: run_test(test_path, repo))
 

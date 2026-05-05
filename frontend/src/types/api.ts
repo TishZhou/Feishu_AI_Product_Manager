@@ -113,6 +113,79 @@ export interface Checkpoint {
   created_at: string
 }
 
+export interface CodeReviewFile {
+  path: string
+  action: 'create' | 'modify' | 'delete' | string
+  diff: string
+  additions: number
+  deletions: number
+  generated_file: string
+  generated_exists: boolean
+  generated_content: string
+}
+
+export interface CodeReviewFilesPayload {
+  mode: string
+  applied_to_repo: boolean
+  patch_applied_to_workspace: boolean
+  workspace_apply_error: string
+  execution_workspace: string
+  source_artifacts?: Record<string, string>
+  file_count: number
+  files: CodeReviewFile[]
+}
+
+export interface TestCaseResult {
+  id?: string
+  name?: string
+  status?: 'passed' | 'failed' | 'skipped' | string
+  message?: string
+}
+
+export interface GeneratedTestFile {
+  path: string
+  content: string
+  truncated?: boolean
+  error?: string
+}
+
+export interface TestRunResult {
+  success?: boolean
+  exit_code?: number
+  test_path?: string
+  total?: number
+  counts?: {
+    passed?: number
+    failed?: number
+    skipped?: number
+    errors?: number
+  }
+  summary?: string
+  stdout?: string
+  stderr?: string
+  error?: string
+  duration_seconds?: number
+}
+
+export interface TestReport {
+  test_file?: string
+  test_files?: string[]
+  test_command?: string
+  total?: number
+  passed?: number
+  failed?: number
+  skipped?: number
+  exit_code?: number
+  test_cases?: TestCaseResult[]
+  error_log?: string
+  summary?: string
+  generated_test_files?: GeneratedTestFile[]
+  runner_validation?: {
+    validated?: boolean
+    runs?: TestRunResult[]
+  }
+}
+
 export const STAGES = [
   { key: 'requirement_analysis', label: '需求分析', index: 1 },
   { key: 'solution_architecture', label: '架构设计', index: 2 },

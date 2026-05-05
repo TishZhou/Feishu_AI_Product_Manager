@@ -400,6 +400,108 @@ def _render_clarification(run_id: str):
             st.rerun()
 
 
+def _safe_widget_key(text: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in text)
+
+
+def _render_code_change_review(run_id: str):
+    st.markdown("### 💻 文件级代码审查")
+    payload = api("GET", f"/api/runs/{run_id}/code-review-files", silent=True) or {}
+    files = payload.get("files") or []
+
+    review_state_key = f"code_file_review_state_{run_id}"
+    can_approve_key = f"code_file_review_can_approve_{run_id}"
+    reject_summary_key = f"code_file_review_reject_summary_{run_id}"
+
+    st.session_state[can_approve_key] = False
+    st.session_state[reject_summary_key] = ""
+
+    if not files:
+        st.warning("还没有可审查的代码文件。请确认 code_generation 阶段已经生成 `code_diff.patch`。")
+        st.session_state[review_state_key] = {}
+        return
+
+    patch_ok = payload.get("patch_applied_to_workspace") is True
+    if patch_ok:
+        st.success("Patch 已成功应用到隔离 execution workspace，可以进入人工代码审查。")
+    else:
+        error = payload.get("workspace_apply_error") or "Patch 未成功应用到隔离 execution workspace。"
+        st.error(f"Patch 应用失败，不能通过本次代码审核：\n\n{error}")
+
+    total_additions = sum(int(f.get("additions") or 0) for f in files)
+    total_deletions = sum(int(f.get("deletions") or 0) for f in files)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("文件数", len(files))
+    c2.metric("新增行", total_additions)
+    c3.metric("删除行", total_deletions)
+    c4.metric("执行模式", payload.get("mode", "artifact_only"))
+
+    decisions = {}
+    for file_info in files:
+        path = file_info.get("path", "")
+        action = file_info.get("action", "modify")
+        additions = file_info.get("additions", 0)
+        deletions = file_info.get("deletions", 0)
+        key_base = _safe_widget_key(f"{run_id}_{path}")
+
+        with st.expander(
+            f"{action.upper()}  `{path}`  (+{additions} / -{deletions})",
+            expanded=not patch_ok,
+        ):
+            diff_tab, file_tab = st.tabs(["Diff", "生成后的文件"])
+            with diff_tab:
+                st.code(file_info.get("diff", ""), language="diff")
+            with file_tab:
+                if file_info.get("generated_exists"):
+                    st.code(file_info.get("generated_content", ""), language=path.rsplit(".", 1)[-1] if "." in path else None)
+                    st.caption(f"artifact: `{file_info.get('generated_file', '')}`")
+                else:
+                    st.warning("没有找到生成后的完整文件快照。")
+
+            decision = st.radio(
+                "审查结论",
+                ["pending", "approved", "rejected"],
+                format_func={
+                    "pending": "未决定",
+                    "approved": "Approve",
+                    "rejected": "Reject",
+                }.get,
+                horizontal=True,
+                key=f"file_decision_{key_base}",
+            )
+            note = st.text_area(
+                "文件级备注",
+                placeholder="指出需要修改的函数、接口、测试或风格问题。Reject 时建议写清楚。",
+                key=f"file_note_{key_base}",
+                height=80,
+            )
+            decisions[path] = {
+                "path": path,
+                "action": action,
+                "decision": decision,
+                "note": note.strip(),
+                "additions": additions,
+                "deletions": deletions,
+            }
+
+    approved_count = sum(1 for d in decisions.values() if d["decision"] == "approved")
+    rejected = [d for d in decisions.values() if d["decision"] == "rejected"]
+    pending = [d for d in decisions.values() if d["decision"] == "pending"]
+
+    st.session_state[review_state_key] = decisions
+    st.session_state[can_approve_key] = patch_ok and not rejected and not pending and len(decisions) == len(files)
+
+    reject_lines = []
+    if not patch_ok:
+        reject_lines.append(f"Patch 应用失败：{payload.get('workspace_apply_error') or 'unknown error'}")
+    for item in rejected:
+        suffix = f"：{item['note']}" if item["note"] else ""
+        reject_lines.append(f"- {item['path']} 被拒绝{suffix}")
+    st.session_state[reject_summary_key] = "\n".join(reject_lines)
+
+    st.caption(f"审查进度：{approved_count} approved / {len(rejected)} rejected / {len(pending)} pending")
+
+
 def _render_checkpoint(run_id: str, cp: dict):
     cp_num = cp["checkpoint_number"]
 
@@ -408,6 +510,11 @@ def _render_checkpoint(run_id: str, cp: dict):
 
     artifacts = api("GET", f"/api/runs/{run_id}/artifacts", silent=True) or []
     artifact_map = {a["filename"]: a["file_path"] for a in artifacts}
+
+    if cp_num == 2:
+        _render_code_change_review(run_id)
+        st.divider()
+        st.markdown("### 阶段产物")
 
     tab_names = CP_ARTIFACTS[cp_num]
     tabs = st.tabs(tab_names)
@@ -426,7 +533,12 @@ def _render_checkpoint(run_id: str, cp: dict):
     with col_approve:
         st.markdown("##### ✅ 通过")
         note = st.text_input("备注（可选）", key="cp_note")
-        if st.button("✅ 通过，继续执行", type="primary", use_container_width=True, key="btn_approve"):
+        approve_disabled = False
+        if cp_num == 2:
+            approve_disabled = not st.session_state.get(f"code_file_review_can_approve_{run_id}", False)
+            if approve_disabled:
+                st.caption("代码审核需要所有文件都 Approve，且 patch 成功应用到 execution workspace。")
+        if st.button("✅ 通过，继续执行", type="primary", use_container_width=True, key="btn_approve", disabled=approve_disabled):
             res = api("POST", f"/api/checkpoints/{cp['id']}/approve",
                       json={"decided_by": "reviewer", "reason": note})
             if res:
@@ -455,12 +567,14 @@ def _render_checkpoint(run_id: str, cp: dict):
         retry_label = st.selectbox("从哪步重新开始", list(retry_choices.keys()), key="cp_retry")
 
         if st.button("❌ 拒绝，重新生成", use_container_width=True, key="btn_reject"):
-            if not reason.strip():
+            generated_reason = st.session_state.get(f"code_file_review_reject_summary_{run_id}", "") if cp_num == 2 else ""
+            final_reason = reason.strip() or generated_reason
+            if not final_reason.strip():
                 st.warning("请填写拒绝原因")
             else:
                 res = api("POST", f"/api/checkpoints/{cp['id']}/reject", json={
                     "decided_by": "reviewer",
-                    "reason": reason,
+                    "reason": final_reason,
                     "retry_stage_key": retry_choices[retry_label],
                 })
                 if res:

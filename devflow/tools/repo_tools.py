@@ -1,7 +1,8 @@
 """Read-only and write repo workspace tools exposed to agents as OpenAI function schemas."""
 
-import fnmatch
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -10,7 +11,9 @@ from pathlib import Path
 
 def list_dir(path: str, repo_path: str) -> dict:
     """List directory contents relative to repo_path."""
-    target = Path(repo_path) / path
+    target = _resolve_repo_path(repo_path, path)
+    if target is None:
+        return {"error": f"Path escapes repo root: {path}"}
     if not target.exists():
         return {"error": f"Path not found: {path}"}
     if not target.is_dir():
@@ -27,7 +30,9 @@ def list_dir(path: str, repo_path: str) -> dict:
 
 def read_file(path: str, repo_path: str, max_bytes: int = 100_000) -> dict:
     """Read a file relative to repo_path (truncated at max_bytes)."""
-    target = Path(repo_path) / path
+    target = _resolve_repo_path(repo_path, path)
+    if target is None:
+        return {"error": f"Path escapes repo root: {path}"}
     if not target.exists():
         return {"error": f"File not found: {path}"}
     if not target.is_file():
@@ -41,6 +46,39 @@ def read_file(path: str, repo_path: str, max_bytes: int = 100_000) -> dict:
 def search_code(query: str, repo_path: str, path_glob: str = "**/*", max_results: int = 200) -> dict:
     """Search for a regex/plain string in files matching path_glob."""
     root = Path(repo_path)
+    rg = shutil.which("rg")
+    if rg:
+        args = [
+            rg,
+            "--line-number",
+            "--with-filename",
+            "--color=never",
+            "--glob",
+            path_glob,
+            query,
+            ".",
+        ]
+        result = subprocess.run(args, cwd=root, capture_output=True, text=True, timeout=20)
+        if result.returncode == 0:
+            rows = []
+            for line in result.stdout.splitlines()[:max_results]:
+                parts = line.split(":", 2)
+                if len(parts) != 3:
+                    continue
+                rows.append({
+                    "file": parts[0].removeprefix("./"),
+                    "line": int(parts[1]) if parts[1].isdigit() else 0,
+                    "content": parts[2].rstrip(),
+                })
+            return {
+                "query": query,
+                "matches": rows,
+                "truncated": len(result.stdout.splitlines()) > max_results,
+                "engine": "rg",
+            }
+        if result.returncode == 1:
+            return {"query": query, "matches": [], "truncated": False, "engine": "rg"}
+
     matches = []
     try:
         pattern = re.compile(query)
@@ -66,15 +104,60 @@ def search_code(query: str, repo_path: str, path_glob: str = "**/*", max_results
                 })
                 if len(matches) >= max_results:
                     return {"query": query, "matches": matches, "truncated": True}
-    return {"query": query, "matches": matches, "truncated": False}
+    return {"query": query, "matches": matches, "truncated": False, "engine": "python"}
 
 
 def write_file(path: str, content: str, repo_path: str) -> dict:
     """Write content to a file relative to repo_path (creates directories as needed)."""
-    target = Path(repo_path) / path
+    target = _resolve_repo_path(repo_path, path)
+    if target is None:
+        return {"error": f"Path escapes repo root: {path}"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"path": path, "size": target.stat().st_size}
+
+
+def edit_file(path: str, old_str: str, new_str: str, repo_path: str) -> dict:
+    """Replace one exact text occurrence in a file, or create/append when old_str is empty."""
+    target = _resolve_repo_path(repo_path, path)
+    if target is None:
+        return {"error": f"Path escapes repo root: {path}"}
+    if not path or old_str == new_str:
+        return {"error": "invalid input parameters"}
+
+    if not target.exists():
+        if old_str:
+            return {"error": f"File not found: {path}"}
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(new_str, encoding="utf-8")
+        return {"path": path, "action": "created", "size": target.stat().st_size}
+
+    if not target.is_file():
+        return {"error": f"Not a file: {path}"}
+
+    content = target.read_text(encoding="utf-8", errors="replace")
+    if not old_str:
+        target.write_text(content + new_str, encoding="utf-8")
+        return {"path": path, "action": "appended", "size": target.stat().st_size}
+
+    count = content.count(old_str)
+    if count == 0:
+        return {"error": "old_str not found in file"}
+    if count > 1:
+        return {"error": f"old_str found {count} times in file, must be unique"}
+
+    target.write_text(content.replace(old_str, new_str, 1), encoding="utf-8")
+    return {"path": path, "action": "edited", "size": target.stat().st_size}
+
+
+def _resolve_repo_path(repo_path: str, path: str) -> Path | None:
+    root = Path(repo_path).resolve()
+    target = (root / (path or ".")).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return None
+    return target
 
 
 # ── OpenAI function-call schemas ──────────────────────────────────────────────
@@ -135,6 +218,22 @@ REPO_TOOL_SCHEMAS: list[dict] = [
                     "content": {"type": "string", "description": "File content to write"},
                 },
                 "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Make a precise edit by replacing exactly one old_str occurrence with new_str. If old_str is empty, create or append to the file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path relative to repo root"},
+                    "old_str": {"type": "string", "description": "Exact text to replace. Must match exactly once, or be empty to create/append."},
+                    "new_str": {"type": "string", "description": "Replacement text or full new file content when old_str is empty"},
+                },
+                "required": ["path", "old_str", "new_str"],
             },
         },
     },

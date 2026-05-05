@@ -70,6 +70,15 @@ export function useRunCheckpoints(runId: string | null) {
   })
 }
 
+export function useCodeReviewFiles(runId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['run', runId, 'code-review-files'],
+    queryFn: () => apiClient.getCodeReviewFiles(runId!),
+    enabled: !!runId && enabled,
+    refetchInterval: enabled ? 2000 : false,
+  })
+}
+
 export function useRunActions() {
   const queryClient = useQueryClient()
 

@@ -9,6 +9,7 @@ import type {
   ReferenceDocumentContext,
   ClarificationSubmit,
   ClarificationPayload,
+  CodeReviewFilesPayload,
 } from '../types/api'
 
 export const DEFAULT_REPO_PATH =
@@ -51,6 +52,9 @@ export const apiClient = {
 
   getRunCheckpoints: (runId: string) =>
     api.get<Checkpoint[]>(`/api/runs/${runId}/checkpoints`).then((r) => r.data),
+
+  getCodeReviewFiles: (runId: string) =>
+    api.get<CodeReviewFilesPayload>(`/api/runs/${runId}/code-review-files`).then((r) => r.data),
 
   pauseRun: (runId: string) =>
     api.post(`/api/runs/${runId}/pause`).then((r) => r.data),

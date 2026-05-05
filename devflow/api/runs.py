@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from devflow.artifacts.patch_materializer import build_patch_review_payload
 from devflow.core.background import task_manager
 from devflow.core.orchestrator import orchestrator
 from devflow.core.state_machine import RunState
@@ -172,6 +173,54 @@ async def get_artifact_content(artifact_id: str, session: AsyncSession = Depends
         raise HTTPException(404, "Artifact file not found on disk")
 
     return PlainTextResponse(path.read_text(encoding="utf-8", errors="replace"))
+
+
+@router.get("/runs/{run_id}/code-review-files")
+async def get_run_code_review_files(run_id: str, session: AsyncSession = Depends(get_session)):
+    await _get_run_or_404(run_id, session)
+
+    patch = await _read_run_artifact(run_id, "code_diff.patch", session)
+    if not patch:
+        return {
+            "mode": "artifact_only",
+            "applied_to_repo": False,
+            "patch_applied_to_workspace": False,
+            "workspace_apply_error": "",
+            "execution_workspace": "",
+            "source_artifacts": {},
+            "file_count": 0,
+            "files": [],
+        }
+
+    manifest: dict = {}
+    manifest_text = await _read_run_artifact(run_id, "generated_files_manifest.json", session)
+    if manifest_text:
+        try:
+            parsed = json.loads(manifest_text)
+            if isinstance(parsed, dict):
+                manifest = parsed
+        except json.JSONDecodeError:
+            manifest = {"workspace_apply_error": "generated_files_manifest.json is not valid JSON"}
+
+    stmt = select(Artifact).where(
+        Artifact.run_id == run_id,
+        Artifact.filename == "code_diff.patch",
+    ).order_by(Artifact.created_at.desc())
+    patch_artifact = (await session.execute(stmt)).scalars().first()
+
+    manifest_stmt = select(Artifact).where(
+        Artifact.run_id == run_id,
+        Artifact.filename == "generated_files_manifest.json",
+    ).order_by(Artifact.created_at.desc())
+    manifest_artifact = (await session.execute(manifest_stmt)).scalars().first()
+
+    artifact_dir = Path(patch_artifact.file_path).parent if patch_artifact else Path("artifacts") / run_id
+    payload = build_patch_review_payload(patch, manifest, artifact_dir)
+    payload["source_artifacts"] = {
+        "code_diff.patch": patch_artifact.id if patch_artifact else "",
+        "generated_files_manifest.json": manifest_artifact.id if manifest_artifact else "",
+    }
+    return payload
 
 
 def _sse_payload(stage_key: str, message: str, level: str = "info") -> str:

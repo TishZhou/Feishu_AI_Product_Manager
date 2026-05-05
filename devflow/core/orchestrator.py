@@ -6,13 +6,14 @@ import logging
 import shutil
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger("devflow.orchestrator")
 
 from devflow.artifacts.store import ArtifactStore
 from devflow.agents.base import AgentContext
-from devflow.core.pipeline_definition import STAGE_REGISTRY, StageDefinition, stages_from
+from devflow.core.pipeline_definition import STAGE_BY_KEY, STAGE_REGISTRY, StageDefinition, stages_from
 from devflow.core.state_machine import RunState, StageState
 from devflow.db.engine import AsyncSessionLocal
 from devflow.db.models import Artifact, Checkpoint, PipelineRun, StageResult
@@ -144,6 +145,10 @@ class PipelineOrchestrator:
         # Determine start stage (support retry from mid-pipeline)
         start_key = await self._get_resume_stage(run_id)
         stage_list = stages_from(start_key)
+        if STAGE_BY_KEY[start_key].index > STAGE_BY_KEY["code_generation"].index:
+            workspace_path = self._load_valid_execution_workspace(artifact_store)
+            if workspace_path:
+                pipeline.repo_path = workspace_path
         logger.info("[RUN %s] stages: %s", run_id[:8], " → ".join(s.key for s in stage_list))
 
         i = 0
@@ -186,6 +191,16 @@ class PipelineOrchestrator:
             await self._set_stage_status(stage_result_id, StageState.RUNNING)
 
             # ── Build context ─────────────────────────────────────────────────
+            if stage_def.key == "test_generation":
+                workspace_path = self._load_valid_execution_workspace(artifact_store)
+                if not workspace_path:
+                    error = "Test generation requires a valid isolated execution workspace from code_generation."
+                    await self._fail_stage(stage_result_id, error, 0.0)
+                    await self._set_run_status(run_id, RunState.FAILED, error=error)
+                    self.cleanup(run_id)
+                    return
+                pipeline.repo_path = workspace_path
+
             ctx = AgentContext(
                 run_id=run_id,
                 pipeline=pipeline,
@@ -229,6 +244,19 @@ class PipelineOrchestrator:
 
             logger.info("[RUN %s] ✓ stage=%s  artifacts=%s  %.1fs",
                         run_id[:8], stage_def.key, saved_filenames, duration)
+
+            # ── Materialize generated files under artifacts only ──────────────
+            if stage_def.key == "code_generation":
+                workspace_path = await self._materialize_generated_files(run_id, artifact_store, pipeline.repo_path)
+                if not workspace_path:
+                    error = self._code_generation_workspace_error(artifact_store)
+                    logger.error("[RUN %s] ✗ stage=%s  workspace_error=%s", run_id[:8], stage_def.key, error)
+                    await self._fail_stage(stage_result_id, error, duration)
+                    await self._set_run_status(run_id, RunState.FAILED, error=error)
+                    self.cleanup(run_id)
+                    return
+                pipeline.repo_path = workspace_path
+
             await self._complete_stage(stage_result_id, saved_filenames, duration)
 
             if stage_def.key == "requirement_analysis" and self._can_request_clarification(run_id, result.artifacts):
@@ -261,12 +289,6 @@ class PipelineOrchestrator:
                 await self._set_run_status(run_id, RunState.RUNNING)
                 ev.clear()
                 continue
-
-            # ── Materialize generated files under artifacts only ──────────────
-            if stage_def.key == "code_generation":
-                workspace_path = await self._materialize_generated_files(run_id, artifact_store, pipeline.repo_path)
-                if workspace_path:
-                    pipeline.repo_path = workspace_path
 
             # ── Checkpoint check ──────────────────────────────────────────────
             if stage_def.checkpoint_after is not None:
@@ -344,6 +366,33 @@ class PipelineOrchestrator:
         except Exception as e:
             logger.warning("[RUN %s] generated file materialization error (non-fatal): %s", run_id[:8], e)
             return ""
+
+    def _load_valid_execution_workspace(self, store: ArtifactStore) -> str:
+        try:
+            manifest = store.load_parsed("generated_files_manifest.json")
+        except FileNotFoundError:
+            return ""
+        if not isinstance(manifest, dict):
+            return ""
+        workspace = manifest.get("execution_workspace", "")
+        if not manifest.get("patch_applied_to_workspace") or not workspace:
+            return ""
+        if not Path(str(workspace)).exists():
+            return ""
+        return str(workspace)
+
+    def _code_generation_workspace_error(self, store: ArtifactStore) -> str:
+        default = "Generated patch could not be applied to the isolated execution workspace."
+        try:
+            manifest = store.load_parsed("generated_files_manifest.json")
+        except FileNotFoundError:
+            return default
+        if not isinstance(manifest, dict):
+            return default
+        detail = manifest.get("workspace_apply_error") or manifest.get("error") or ""
+        if detail:
+            return f"{default} {detail}".strip()
+        return default
 
     def _load_prior(self, store: ArtifactStore, stage_keys: list[str]) -> dict[str, dict]:
         from devflow.core.pipeline_definition import STAGE_BY_KEY

@@ -29,15 +29,15 @@
     ▼
 [Stage 3]  💻 代码生成        → code_diff.patch + generated_files/ + implementation_summary.md
     │         agents/code_generation.py
-    │         按规格生成代码 diff，并在 artifacts 中保存生成后的文件快照
+    │         在临时 workspace 中编辑文件，由系统生成可应用 diff，并在 artifacts 中保存生成后的文件快照
     ▼
 [Stage 4]  🧪 测试生成        → test_report.json
     │         agents/test_generation.py
-    │         自动写测试并运行
+    │         在隔离 workspace 中读取实现、生成 pytest 测试、执行并由系统复核结果
     ▼
 [Stage 5]  🔍 代码审查        → review_report.md
     │         agents/code_review.py
-    │         从安全 / 性能 / 规范角度审查代码
+    │         结合 diff、完整文件快照、测试代码和执行结果做多维审查
     │
 ⏸️  Checkpoint 2 — 你审核代码，通过继续 / 打回从代码生成重跑
     │
@@ -48,6 +48,14 @@
 
 每次 run 的产物保存在 `artifacts/{run_id}/`。代码生成默认只写入 artifacts，不自动修改目标仓库。
 为支持测试执行，系统会在 artifacts 下复制一个隔离的 `execution_workspace_*`，并只在该副本中应用 patch。
+
+最新 coding agent 逻辑强调“隔离执行 + 证据可视化”：
+
+- Stage 3 先复制目标仓库到 `codegen_workspace_*`，Agent 只在临时副本里改文件，再由系统生成 `code_diff.patch`。
+- 系统会把 patch 物化为 `generated_files/` 全量文件快照，并复制 `execution_workspace_*` 应用 patch，后续测试和审查都在隔离 workspace 中进行。
+- Stage 4 可以读取相关代码和现有测试风格，写入生成测试后执行 pytest；系统会再次复跑测试并覆盖 `test_report.json` 中的 passed / failed / exit_code 等关键统计，避免只相信模型自述。
+- Stage 5 会把 diff、`generated_files_manifest.json`、完整生成文件内容、测试代码和 pytest stdout/stderr 一并纳入审查上下文。
+- React 控制台会在“测试生成”阶段直接可视化展示测试代码、执行结果、通过率、失败信息和 pytest 输出。
 
 ---
 
@@ -110,6 +118,7 @@ React 前端以当前本地后端 API 为准，支持创建 pipeline、启动 ru
 | `GET /api/workspace` | 返回后端进程的默认工作区路径 |
 | `POST /api/reference-documents/extract` | 解析上传参考文档，生成 RAG 上下文 |
 | `GET /api/artifacts/{artifact_id}/content` | 返回 artifact 文件原始文本内容 |
+| `GET /api/runs/{run_id}/code-review-files` | 返回代码审查用的 diff、生成文件快照和 source artifact 映射 |
 | `GET /api/runs/{run_id}/logs/stream` | 返回 SSE 阶段状态事件流 |
 
 React 启动页支持上传参考文档（PDF / DOCX / DOC / TXT / MD）。后端会复用 `devflow.services.document_context.extract_reference_documents()` 提取文本，并把结果写入 pipeline 的 `reference_context` / `reference_sources`，供需求分析 Agent 作为 RAG 参考上下文使用。
@@ -124,7 +133,7 @@ React 启动页支持上传参考文档（PDF / DOCX / DOC / TXT / MD）。后�
 
 | Provider | 环境变量 | 默认模型 | 说明 |
 |----------|---------|---------|------|
-| `openai` | `OPENAI_API_KEY` | `gpt-4o` | OpenAI 官方 |
+| `openai` | `OPENAI_API_KEY` | `gpt-5.5` | OpenAI 官方，适合复杂推理和代码任务 |
 | `volcano` | `VOLCANO_API_KEY` | `seed-v1.6` | 火山引擎，key 格式为 `key_id:secret_key` |
 
 在 `.env` 里设置 `DEFAULT_PROVIDER=volcano` 可全局切换为火山引擎。
@@ -143,13 +152,13 @@ React 启动页支持上传参考文档（PDF / DOCX / DOC / TXT / MD）。后�
 | `solution_design.md` | Stage 2A | 面向人工审核的技术方案设计 |
 | `solution_contract.json` | Stage 2A | 面向后续 agent 的方案 contract，含影响范围、文件清单、API 设计和测试映射 |
 | `detailed_spec.json` | Stage 2B | 精炼后的可执行实现规格，兼容代码生成输入 |
-| `code_diff.patch` | Stage 3 | 原始代码变更 Diff |
+| `code_diff.patch` | Stage 3 | 由临时 workspace 文件变更生成的代码 Diff |
 | `generated_files_manifest.json` | Stage 3 | 生成文件清单，指向 artifacts 下的完整文件快照 |
 | `generated_files/` | Stage 3 | 根据 diff 物化出的完整文件副本，不修改目标仓库 |
 | `execution_workspace_*` | Stage 3 | 用于测试执行的隔离工作区副本，patch 只应用到这里 |
 | `implementation_summary.md` | Stage 3 | 实现说明 |
-| `test_report.json` | Stage 4 | 测试执行报告 |
-| `review_report.md` | Stage 5 | 代码审查报告 |
+| `test_report.json` | Stage 4 | 测试执行报告，包含生成测试文件、pytest 统计、stdout/stderr、runner_validation 复核结果 |
+| `review_report.md` | Stage 5 | 代码审查报告，基于 diff、完整文件快照和测试执行证据 |
 | `delivery_summary.md` | Stage 6 | 交付总结 |
 | `final_diff.patch` | Stage 6 | 最终干净 Diff（含审查修订，可直接 `git apply`） |
 
@@ -168,6 +177,7 @@ React 启动页支持上传参考文档（PDF / DOCX / DOC / TXT / MD）。后�
 | GET | `/api/runs/{run_id}/stages` | 查询各阶段结果 |
 | GET | `/api/runs/{run_id}/artifacts` | 列出所有产物 |
 | GET | `/api/artifacts/{artifact_id}/content` | 读取产物原始文本内容 |
+| GET | `/api/runs/{run_id}/code-review-files` | 读取代码审查文件视图（diff + generated_files 内容） |
 | GET | `/api/runs/{run_id}/checkpoints` | 列出检查点 |
 | GET | `/api/runs/{run_id}/logs/stream` | SSE 阶段状态事件流 |
 | POST | `/api/runs/{run_id}/pause` | 暂停运行 |
@@ -254,15 +264,20 @@ devflow/
 │   ├── code_review.py               # Stage 5 — 代码审查
 │   ├── delivery.py                  # Stage 6 — 交付打包
 │   └── prompts/                     # 各 Agent 对应的 prompt 模板
+├── artifacts/
+│   ├── store.py                     # ArtifactStore（按 run_id 分目录读写）
+│   └── patch_materializer.py        # 将 code_diff.patch 物化为 generated_files 快照和审查 payload
 ├── providers/
 │   └── router.py            # ProviderRouter（OpenAI + 火山引擎，含 tool-use 循环）
 ├── tools/
 │   ├── repo_tools.py        # list_dir / read_file / search_code / write_file
 │   ├── patch_tools.py       # apply_patch（git apply 封装）
 │   └── test_runner.py       # run_test（subprocess pytest）
-└── artifacts/store.py       # ArtifactStore（按 run_id 分目录读写）
 
 artifacts/                   # 运行时产物（gitignored）
+├── {run_id}/generated_files/         # 由 patch 物化出的完整生成文件快照
+├── {run_id}/codegen_workspace_*/     # Stage 3 临时代码生成 workspace
+└── {run_id}/execution_workspace_*/   # Stage 4/5 隔离测试与审查 workspace
 data/devflow.db              # SQLite 数据库（gitignored）
 streamlit_app.py             # Streamlit 前端 UI
 frontend/                    # React/Vite 前端控制台
@@ -280,9 +295,10 @@ frontend/
 │   │   ├── ConsoleView.tsx      # 主控台：整体布局
 │   │   ├── PipelineGraph.tsx    # 左侧阶段时间线
 │   │   ├── StageDetail.tsx      # 阶段详情和产物入口
+│   │   ├── TestReportView.tsx   # Stage 4 测试代码和执行结果可视化
 │   │   ├── LogStream.tsx        # 底部日志区域
 │   │   ├── CheckpointModal.tsx  # 人工审核 Modal
-│   │   └── ArtifactViewer.tsx   # 产物预览
+│   │   └── ArtifactViewer.tsx   # 产物预览，支持 patch diff 和 test_report 可视化
 │   ├── hooks/useDevFlow.ts      # React Query hooks
 │   ├── lib/api.ts               # Axios 封装和本地兼容层
 │   └── types/api.ts             # TypeScript 类型 + Stage 常量

@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { StageResult, Artifact } from '../types/api'
 import { STAGES } from '../types/api'
 import { FileCode2, Clock, Cpu, AlertTriangle, Hash, Zap, ArrowRight, Eye } from 'lucide-react'
+import { apiClient } from '../lib/api'
+import { parseTestReport, TestReportView } from './TestReportView'
 
 interface StageDetailProps {
   stages: StageResult[]
@@ -58,6 +60,29 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
 
   const displayStage    = viewedStage ?? activeStage
   const isViewingHistory = !!viewedStage && viewedStage !== activeStage
+  const displayStageKey = displayStage?.stage_key ?? ''
+
+  const testReportArtifact = useMemo(() => {
+    if (displayStageKey !== 'test_generation') return null
+    return artifacts.find(a => a.stage_key === 'test_generation' && a.filename === 'test_report.json') ?? null
+  }, [artifacts, displayStageKey])
+
+  const [testReportContent, setTestReportContent] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setTestReportContent('')
+    if (!testReportArtifact) return () => { active = false }
+
+    apiClient.getArtifactContent(testReportArtifact).then((data) => {
+      if (!active) return
+      setTestReportContent(typeof data === 'string' ? data : JSON.stringify(data, null, 2))
+    })
+
+    return () => { active = false }
+  }, [testReportArtifact])
+
+  const hasVisualTestReport = !!parseTestReport(testReportContent)
 
   if (!displayStage) {
     return (
@@ -207,6 +232,14 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
         </div>
       )}
 
+      {/* ── Visual test report ── */}
+      {testReportArtifact && hasVisualTestReport && (
+        <div>
+          <SectionLabel>测试结果</SectionLabel>
+          <TestReportView content={testReportContent} compact />
+        </div>
+      )}
+
       {/* ── Artifacts ── */}
       <div>
         <SectionLabel>输出产物</SectionLabel>
@@ -218,6 +251,11 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
                 <FileCode2 className="w-3.5 h-3.5 shrink-0" style={{ color: 'rgba(255,255,255,0.35)' }} />
                 <span className="text-[11px] font-mono" style={{ color: 'rgba(255,255,255,0.60)' }}>
                   {artifact.filename}
+                </span>
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md"
+                  title={`artifacts/${artifact.run_id}/`}
+                  style={{ color: 'rgba(255,255,255,0.28)', background: 'rgba(51,112,255,0.08)' }}>
+                  artifacts/{artifact.run_id.slice(0, 8)}
                 </span>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md"
                   style={{ color: 'rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.04)' }}>
