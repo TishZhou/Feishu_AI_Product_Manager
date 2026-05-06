@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 
@@ -9,15 +10,35 @@ from devflow.db.engine import get_session
 from devflow.db.models import Pipeline, PipelineRun
 from devflow.schemas.pipeline import PipelineCreate, PipelineRead
 from devflow.schemas.run import RunRead
+from devflow.services.repo_safety import is_devflow_source_repo
+
+logger = logging.getLogger("devflow.api.pipelines")
 
 router = APIRouter(tags=["Pipelines"])
 
 
 @router.post("/pipelines", response_model=PipelineRead, status_code=201)
 async def create_pipeline(body: PipelineCreate, session: AsyncSession = Depends(get_session)):
-    repo = Path(body.repo_path)
+    repo = Path(body.repo_path).expanduser()
     if not repo.exists():
         raise HTTPException(400, f"repo_path does not exist: {body.repo_path}")
+
+    if is_devflow_source_repo(repo):
+        if not body.confirm_self_modification:
+            # 409 with a structured detail so the UI can render a dedicated
+            # confirmation modal (and so we never silently accept self-modification).
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "self_modification_consent_required",
+                    "message": "选中的路径是 DevFlow 自身代码库。继续运行将让 AI 修改本平台。请在前端显式确认后再启动。",
+                    "repo_path": str(repo.resolve()),
+                },
+            )
+        logger.warning(
+            "[CREATE_PIPELINE] self-modification CONFIRMED by user — repo=%s",
+            repo.resolve(),
+        )
 
     pipeline = Pipeline(
         id=str(uuid.uuid4()),

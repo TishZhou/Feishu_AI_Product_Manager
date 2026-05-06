@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from devflow.core.pipeline_definition import STAGE_REGISTRY
 from devflow.providers.router import provider_router
+from devflow.services.repo_safety import inspect_repo
 
 router = APIRouter(tags=["Meta"])
 
@@ -12,6 +13,16 @@ router = APIRouter(tags=["Meta"])
 @router.get("/workspace")
 async def get_workspace():
     return {"path": str(Path(os.getcwd()).resolve())}
+
+
+@router.get("/repo-check")
+async def check_repo(path: str = ""):
+    """Inspect a candidate repo path so the UI can warn the user before submit.
+
+    Returns ``{exists, is_self_repo, is_git_repo, ...}`` so the create-pipeline
+    form can show inline feedback and pre-empt the 409 from POST /pipelines.
+    """
+    return inspect_repo(path)
 
 
 @router.get("/providers")

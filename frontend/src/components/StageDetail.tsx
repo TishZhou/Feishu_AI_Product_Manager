@@ -3,7 +3,8 @@ import type { StageResult, Artifact } from '../types/api'
 import { STAGES } from '../types/api'
 import { FileCode2, Clock, Cpu, AlertTriangle, Hash, Zap, ArrowRight, Eye } from 'lucide-react'
 import { apiClient } from '../lib/api'
-import { parseTestReport, TestReportView } from './TestReportView'
+import { parseTestReport } from '../lib/testReport'
+import { TestReportView } from './TestReportView'
 
 interface StageDetailProps {
   stages: StageResult[]
@@ -48,14 +49,30 @@ function formatDur(s: number) {
   return `${(s / 60).toFixed(1)}m`
 }
 
+function latestStageForKey(stages: StageResult[], key: string) {
+  return stages
+    .filter(stage => stage.stage_key === key)
+    .sort((a, b) => b.attempt - a.attempt)[0]
+}
+
 export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageKey, onClearViewing }: StageDetailProps) {
+  const latestStages = useMemo(
+    () => STAGES.map(stage => latestStageForKey(stages, stage.key)).filter((stage): stage is StageResult => !!stage),
+    [stages],
+  )
+
   const activeStage = useMemo(() => {
-    if (!stages.length) return null
-    return stages.find(s => s.status === 'running') ?? stages[stages.length - 1]
-  }, [stages])
+    if (!latestStages.length) return null
+    return (
+      latestStages.find(s => s.status === 'running') ??
+      latestStages.find(s => s.status === 'failed') ??
+      [...latestStages].reverse().find(s => s.status !== 'pending') ??
+      latestStages[latestStages.length - 1]
+    )
+  }, [latestStages])
 
   const viewedStage = useMemo(() =>
-    viewingStageKey ? stages.find(s => s.stage_key === viewingStageKey) ?? null : null,
+    viewingStageKey ? latestStageForKey(stages, viewingStageKey) ?? null : null,
   [stages, viewingStageKey])
 
   const displayStage    = viewedStage ?? activeStage
@@ -71,7 +88,9 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
 
   useEffect(() => {
     let active = true
-    setTestReportContent('')
+    queueMicrotask(() => {
+      if (active) setTestReportContent('')
+    })
     if (!testReportArtifact) return () => { active = false }
 
     apiClient.getArtifactContent(testReportArtifact).then((data) => {
@@ -110,8 +129,8 @@ export function StageDetail({ stages, artifacts, onSelectArtifact, viewingStageK
   const cfg       = STATUS_CFG[st] ?? STATUS_CFG.pending
   const isRunning = st === 'running'
 
-  const succeededCount = stages.filter(s => s.status === 'succeeded').length
-  const runningStage   = stages.find(s => s.status === 'running')
+  const succeededCount = latestStages.filter(s => s.status === 'succeeded').length
+  const runningStage   = latestStages.find(s => s.status === 'running')
   const runningDef     = runningStage ? STAGES.find(s => s.key === runningStage.stage_key) : null
 
   return (

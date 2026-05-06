@@ -3,6 +3,7 @@ import json
 from devflow.agents.base import AgentContext, AgentResult, BaseAgent
 from devflow.agents.prompts import detailed_spec as prompts
 from devflow.agents.solution_architecture import _extract_json_object
+from devflow.services.repo_map import compact_repo_context_for_prompt
 
 
 class DetailedSpecAgent(BaseAgent):
@@ -33,8 +34,7 @@ class DetailedSpecAgent(BaseAgent):
         if isinstance(solution_contract, dict):
             solution_contract = json.dumps(solution_contract, indent=2, ensure_ascii=False)
         repo_context = self._get_artifact(ctx, "solution_architecture", "repo_context_summary.json", "{}")
-        if isinstance(repo_context, dict):
-            repo_context = json.dumps(repo_context, indent=2, ensure_ascii=False)
+        repo_context = compact_repo_context_for_prompt(repo_context)
 
         return prompts.USER_TMPL.format(
             requirement_spec=req_spec,

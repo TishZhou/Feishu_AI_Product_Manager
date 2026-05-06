@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Play, Rocket, Zap, GitBranch, Cpu, AlertCircle, Paperclip, FileText, X } from 'lucide-react'
-import { useCreatePipeline, useCreateRun, useExtractReferenceDocuments, useWorkspace } from '../hooks/useDevFlow'
-import { motion } from 'framer-motion'
+import { Play, Rocket, Zap, GitBranch, Cpu, AlertCircle, AlertTriangle, Paperclip, FileText, X } from 'lucide-react'
+import { useCreatePipeline, useCreateRun, useExtractReferenceDocuments, useRepoCheck, useWorkspace } from '../hooks/useDevFlow'
+import { motion, AnimatePresence } from 'framer-motion'
 import axios from 'axios'
 import { DEFAULT_REPO_PATH } from '../lib/api'
+import type { PipelineCreate } from '../types/api'
 
 interface SetupViewProps {
   onRunStarted: (runId: string) => void
@@ -16,11 +17,45 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
   const [model, setModel] = useState('')
   const [referenceFiles, setReferenceFiles] = useState<File[]>([])
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [pendingSelfModPayload, setPendingSelfModPayload] = useState<PipelineCreate | null>(null)
 
   const workspace = useWorkspace()
   const createPipeline = useCreatePipeline()
   const createRun = useCreateRun()
   const extractReferenceDocuments = useExtractReferenceDocuments()
+  const repoCheck = useRepoCheck(repoPath, repoPath.length > 0)
+
+  const submitWithPayload = async (payload: PipelineCreate) => {
+    const pipeline = await createPipeline.mutateAsync(payload)
+    const run = await createRun.mutateAsync(pipeline.id)
+    onRunStarted(run.id)
+  }
+
+  const handleApiError = (err: unknown, payloadOnSelfMod: PipelineCreate) => {
+    if (axios.isAxiosError(err)) {
+      const status = err.response?.status
+      const detail = err.response?.data?.detail
+      if (
+        status === 409 &&
+        typeof detail === 'object' &&
+        detail !== null &&
+        (detail as { code?: string }).code === 'self_modification_consent_required'
+      ) {
+        setPendingSelfModPayload(payloadOnSelfMod)
+        return
+      }
+      if (status === 400) {
+        const text = typeof detail === 'string' ? detail : ''
+        if (text.toLowerCase().includes('repo_path') || text.toLowerCase().includes('does not exist')) {
+          setSubmitError(`路径不存在，请检查服务器上是否有该目录：${repoPath}`)
+        } else {
+          setSubmitError(text || '请求参数有误，请检查后重试')
+        }
+        return
+      }
+    }
+    setSubmitError('启动流水线失败，请稍后重试')
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,7 +67,7 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
         ? await extractReferenceDocuments.mutateAsync(referenceFiles)
         : { reference_context: '', reference_sources: '' }
 
-      const pipeline = await createPipeline.mutateAsync({
+      const payload: PipelineCreate = {
         name: `运行 #${Math.floor(Math.random() * 1000)}`,
         description: taskDescription,
         task_type: 'feature',
@@ -41,22 +76,32 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
         reference_sources: referenceContext.reference_sources,
         provider,
         model: model || undefined,
-      })
-
-      const run = await createRun.mutateAsync(pipeline.id)
-      onRunStarted(run.id)
-    } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.status === 400) {
-        const detail = err.response.data?.detail ?? ''
-        if (detail.toLowerCase().includes('repo_path') || detail.toLowerCase().includes('does not exist')) {
-          setSubmitError(`路径不存在，请检查服务器上是否有该目录：${repoPath}`)
-        } else {
-          setSubmitError(detail || '请求参数有误，请检查后重试')
-        }
-      } else {
-        setSubmitError('启动流水线失败，请稍后重试')
       }
+
+      await submitWithPayload(payload)
+    } catch (err) {
+      handleApiError(err, {
+        name: `运行 #${Math.floor(Math.random() * 1000)}`,
+        description: taskDescription,
+        task_type: 'feature',
+        repo_path: repoPath,
+        provider,
+        model: model || undefined,
+      })
       console.error('启动流水线失败', err)
+    }
+  }
+
+  const confirmSelfMod = async () => {
+    if (!pendingSelfModPayload) return
+    const payload = { ...pendingSelfModPayload, confirm_self_modification: true }
+    setPendingSelfModPayload(null)
+    setSubmitError(null)
+    try {
+      await submitWithPayload(payload)
+    } catch (err) {
+      handleApiError(err, payload)
+      console.error('确认后启动失败', err)
     }
   }
 
@@ -74,19 +119,8 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
   return (
     <div
       className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
-      style={{
-        backgroundImage: 'url(/bg.png)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
+      style={{ background: '#050a19' }}
     >
-      {/* Dark overlay for readability */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{ background: 'rgba(5, 10, 25, 0.45)' }}
-      />
-
       <motion.div
         initial={{ opacity: 0, y: 32, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -277,6 +311,19 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
                   <p className="text-[10px] text-amber-500 leading-snug px-1">
                     无法获取默认路径，请手动填写服务器上的绝对路径
                   </p>
+                ) : repoCheck.data?.exists === false ? (
+                  <p className="text-[10px] text-red-400 leading-snug px-1">
+                    路径不存在
+                  </p>
+                ) : repoCheck.data?.is_self_repo ? (
+                  <p className="text-[10px] text-amber-400 leading-snug px-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    选中的是 DevFlow 自身代码库 — 启动后需二次确认
+                  </p>
+                ) : repoCheck.data?.exists ? (
+                  <p className="text-[10px] text-emerald-400/80 leading-snug px-1">
+                    将仅基于该目录构建 repomap{repoCheck.data?.is_git_repo ? '（git 仓库）' : ''}
+                  </p>
                 ) : (
                   <p className="text-[10px] text-slate-500 leading-snug px-1">
                     服务器上的代码目录绝对路径
@@ -374,6 +421,79 @@ export function SetupView({ onRunStarted }: SetupViewProps) {
           </p>
         </div>
       </motion.div>
+
+      {/* Self-modification confirmation modal */}
+      <AnimatePresence>
+        {pendingSelfModPayload && (
+          <motion.div
+            key="self-mod-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center px-6"
+            style={{ background: 'rgba(2, 6, 23, 0.78)', backdropFilter: 'blur(6px)' }}
+          >
+            <motion.div
+              initial={{ scale: 0.94, y: 12, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.94, y: 12, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="relative w-full max-w-md rounded-2xl p-6"
+              style={{
+                background: 'rgba(15, 22, 42, 0.96)',
+                border: '1px solid rgba(245, 158, 11, 0.45)',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+              }}
+            >
+              <div className="flex items-start gap-3 mb-4">
+                <div className="p-2 rounded-xl shrink-0" style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-white">确认修改 DevFlow 自身？</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">这是高权限操作，需要显式确认。</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-sm text-slate-300 leading-relaxed">
+                <p>
+                  你选择的目录是 <span className="font-mono text-amber-300 break-all">{pendingSelfModPayload.repo_path}</span>
+                  ，正是本平台 DevFlow 的源码仓库。
+                </p>
+                <p>继续后，AI 流水线生成的代码补丁会落到这个仓库。每个 stage 仍然有人工审核节点，但请确保你了解后果：</p>
+                <ul className="list-disc list-inside text-xs text-slate-400 space-y-1 pl-1">
+                  <li>代码会先写入隔离工作区，最终交付才会动到源仓库</li>
+                  <li>建议在干净的 git 分支上跑，方便回滚</li>
+                  <li>每个 checkpoint 仔细审核 diff 后再 approve</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setPendingSelfModPayload(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium text-slate-300 transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmSelfMod}
+                  disabled={isLoading}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(245,158,11,0.9) 0%, rgba(217,119,6,1) 100%)',
+                    boxShadow: '0 8px 24px rgba(245,158,11,0.35)',
+                  }}
+                >
+                  我了解，继续启动
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

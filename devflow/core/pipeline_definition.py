@@ -73,7 +73,7 @@ STAGE_REGISTRY: list[StageDefinition] = [
         key="code_review",
         index=6,
         agent_class_path="devflow.agents.code_review.CodeReviewAgent",
-        output_artifacts=["review_report.md"],
+        output_artifacts=["review_report.json", "review_report.md"],
         reads_from_stages=["solution_architecture", "detailed_spec", "code_generation", "test_generation"],
         checkpoint_after=2,
         checkpoint_default_retry="code_generation",
@@ -84,7 +84,8 @@ STAGE_REGISTRY: list[StageDefinition] = [
         agent_class_path="devflow.agents.delivery.DeliveryAgent",
         output_artifacts=["delivery_summary.md", "final_diff.patch"],
         reads_from_stages=["code_generation", "test_generation", "code_review"],
-        checkpoint_after=None,
+        checkpoint_after=3,
+        checkpoint_default_retry="code_review",
     ),
 ]
 

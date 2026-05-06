@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    OPENAI_DEFAULT_MODEL: str = "gpt-5.5"
+    OPENAI_DEFAULT_MODEL: str = "gpt-5.4"
 
     # Volcano Engine Trae (ByteDance) — OpenAI-compatible
     VOLCANO_API_KEY: str = ""

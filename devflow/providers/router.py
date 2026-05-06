@@ -48,6 +48,8 @@ class ProviderRouter:
         tool_dispatcher: "ToolDispatcher | None" = None,
         json_mode: bool = False,
         max_tokens: int | None = None,
+        max_tool_rounds: int = 25,
+        cache_key: str | None = None,
     ) -> str:
         provider = provider or settings.DEFAULT_PROVIDER
         client = self.get_client(provider)
@@ -67,15 +69,27 @@ class ProviderRouter:
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
 
+        # OpenAI prompt caching: passing a stable cache_key groups calls for the
+        # provider-side cache router. Caching itself is automatic once the prompt
+        # exceeds 1024 tokens, but the key improves hit rate across calls and
+        # surfaces cached_tokens in usage. Volcano (火山) doesn't support this
+        # parameter — leave that path untouched.
+        if provider == "openai" and cache_key:
+            kwargs["prompt_cache_key"] = cache_key
+
         import time as _time
         t0 = _time.monotonic()
-        logger.info("[LLM] ▶ calling %s  model=%s  tools=%s  json=%s", provider, resolved_model, bool(tools), json_mode)
+        logger.info(
+            "[LLM] ▶ calling %s  model=%s  tools=%s  json=%s  cache_key=%s",
+            provider, resolved_model, bool(tools), json_mode, cache_key or "-",
+        )
         print(f"[LLM] provider={provider}  model={resolved_model}", flush=True)
 
-        # Agentic tool-use loop (max 10 rounds to prevent infinite loops)
-        for round_num in range(10):
+        # Agentic tool-use loop — capped at max_tool_rounds to prevent runaway calls
+        for round_num in range(max(1, max_tool_rounds)):
             response = await client.chat.completions.create(**kwargs, timeout=180)
             choice = response.choices[0]
+            self._log_cache_usage(response, provider, round_num + 1)
 
             if choice.finish_reason == "tool_calls" and tool_dispatcher and choice.message.tool_calls:
                 tool_names = [tc.function.name for tc in choice.message.tool_calls]
@@ -105,13 +119,35 @@ class ProviderRouter:
             return choice.message.content or ""
 
         # Force a final text response after tool rounds are exhausted
-        logger.warning("[LLM] exhausted 10 tool rounds — requesting final summary")
+        logger.warning("[LLM] exhausted %d tool rounds — requesting final summary", max_tool_rounds)
         messages.append({"role": "user", "content": "You have used all available tool calls. Now produce your final text response based on what you have gathered so far."})
         kwargs["messages"] = messages
         kwargs.pop("tools", None)
         kwargs.pop("tool_choice", None)
         final = await client.chat.completions.create(**kwargs, timeout=180)
+        self._log_cache_usage(final, provider, max_tool_rounds + 1)
         return final.choices[0].message.content or ""
+
+    def _log_cache_usage(self, response: Any, provider: str, round_num: int) -> None:
+        """Log how many prompt tokens were served from the provider-side cache.
+
+        OpenAI returns ``usage.prompt_tokens_details.cached_tokens``; volcano and
+        other OpenAI-compatible APIs may omit this field. Silently no-op when
+        absent so non-OpenAI providers stay unaffected.
+        """
+        usage = getattr(response, "usage", None)
+        if not usage:
+            return
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = getattr(details, "cached_tokens", None) if details else None
+        if cached is None:
+            return
+        prompt_total = getattr(usage, "prompt_tokens", 0) or 0
+        ratio = (cached / prompt_total * 100) if prompt_total else 0.0
+        logger.info(
+            "[LLM] ⚡ cache  round=%d  cached=%d / %d prompt tokens (%.0f%%)",
+            round_num, cached, prompt_total, ratio,
+        )
 
     async def check_connectivity(self, provider: str) -> dict[str, Any]:
         try:
@@ -141,10 +177,35 @@ class ToolDispatcher:
         fn = self._registry.get(name)
         if fn is None:
             return {"error": f"Unknown tool: {name}"}
+        # LLMs occasionally hallucinate extra kwargs (e.g. passing ``cwd`` to
+        # ``write_file`` because they saw it in another tool's schema). Filter
+        # the args down to what the bound function actually accepts so a
+        # spurious parameter is silently dropped instead of crashing the run.
+        filtered = _filter_kwargs_for(fn, args or {})
         import asyncio
         if asyncio.iscoroutinefunction(fn):
-            return await fn(**args)
-        return fn(**args)
+            return await fn(**filtered)
+        return fn(**filtered)
+
+
+def _filter_kwargs_for(fn: Any, args: dict) -> dict:
+    import inspect
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return args
+    accepted: set[str] = set()
+    accepts_var_kw = False
+    for name, param in sig.parameters.items():
+        if param.kind is inspect.Parameter.VAR_KEYWORD:
+            accepts_var_kw = True
+            continue
+        if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.VAR_POSITIONAL):
+            continue
+        accepted.add(name)
+    if accepts_var_kw:
+        return args
+    return {k: v for k, v in args.items() if k in accepted}
 
 
 # Singleton used across the app

@@ -8,11 +8,24 @@ from devflow.agents.base import AgentContext, AgentResult, BaseAgent
 from devflow.agents.prompts import code_generation as prompts
 from devflow.config import settings
 from devflow.providers.router import ToolDispatcher
+from devflow.tools.command_runner import COMMAND_TOOL_SCHEMAS, run_command
 from devflow.tools.repo_tools import REPO_TOOL_SCHEMAS
 from devflow.tools.repo_tools import edit_file, list_dir, read_file, search_code, write_file
+from devflow.tools.test_runner import TEST_TOOL_SCHEMAS, run_test
+from devflow.tools.workspace import create_workspace
 
 _SEPARATOR = "---IMPLEMENTATION_SUMMARY---"
-_IGNORE_DIRS = {".git", "__pycache__", ".pytest_cache", "artifacts", "data", "uploads", "dist", "node_modules"}
+_IGNORE_DIRS = {
+    ".git", "__pycache__", ".pytest_cache",
+    "artifacts", "data", "uploads", "dist", "node_modules",
+    # AI / IDE tool config dirs — never part of a code diff
+    ".claude", ".wolf", ".cursor", ".idea", ".vscode",
+}
+_IGNORE_NAMES = {
+    # Environment and local config files — never patch these
+    ".env", ".env.local", ".env.development", ".env.production", ".env.test",
+    ".DS_Store",
+}
 _IGNORE_SUFFIXES = {".pyc", ".pyo", ".so", ".db", ".sqlite", ".sqlite3", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf"}
 
 
@@ -34,11 +47,7 @@ class CodeGenerationAgent(BaseAgent):
         workspace = Path(settings.ARTIFACTS_DIR) / ctx.run_id / f"codegen_workspace_{ctx.attempt}_{uuid.uuid4().hex[:8]}"
         if workspace.exists():
             shutil.rmtree(workspace)
-        shutil.copytree(
-            source_repo,
-            workspace,
-            ignore=shutil.ignore_patterns(*_IGNORE_DIRS),
-        )
+        create_workspace(source_repo, workspace)
 
         dispatcher = ToolDispatcher()
         workspace_str = str(workspace)
@@ -47,6 +56,8 @@ class CodeGenerationAgent(BaseAgent):
         dispatcher.register("search_code", lambda query, path_glob="**/*": search_code(query, workspace_str, path_glob))
         dispatcher.register("write_file", lambda path, content: write_file(path, content, workspace_str))
         dispatcher.register("edit_file", lambda path, old_str, new_str: edit_file(path, old_str, new_str, workspace_str))
+        dispatcher.register("run_command", lambda command, cwd=".", timeout_seconds=120: run_command(command, workspace_str, cwd, timeout_seconds))
+        dispatcher.register("run_test", lambda test_path: run_test(test_path, workspace_str))
 
         raw_summary = await ctx.provider_router.chat(
             system=self.build_system_prompt(ctx),
@@ -57,6 +68,8 @@ class CodeGenerationAgent(BaseAgent):
             tool_dispatcher=dispatcher,
             json_mode=False,
             max_tokens=self.max_tokens(),
+            max_tool_rounds=30,
+            cache_key=f"devflow:{ctx.stage_key}",
         )
 
         patch = _build_workspace_patch(source_repo, workspace)
@@ -92,15 +105,19 @@ class CodeGenerationAgent(BaseAgent):
         solution_contract = self._get_artifact(ctx, "solution_architecture", "solution_contract.json", "{}")
         if isinstance(solution_contract, dict):
             solution_contract = json.dumps(solution_contract, indent=2, ensure_ascii=False)
-        return prompts.USER_TMPL.format(
-            detailed_spec=spec,
-            solution_contract=solution_contract,
-            solution_design=solution,
-            repo_path=repo_path,
+        return (
+            prompts.USER_TMPL.format(
+                detailed_spec=spec,
+                solution_contract=solution_contract,
+                solution_design=solution,
+                repo_path=repo_path,
+            )
+            + _format_test_failure_context(ctx)
+            + _format_review_blocker_context(ctx)
         )
 
     def get_tools(self) -> list[dict]:
-        return [REPO_TOOL_SCHEMAS[i] for i in (0, 1, 2, 4, 3)]  # list/read/search/edit/write
+        return [REPO_TOOL_SCHEMAS[i] for i in (0, 1, 2, 4, 3)] + COMMAND_TOOL_SCHEMAS + TEST_TOOL_SCHEMAS
 
     def parse_response(self, response: str, ctx: AgentContext) -> AgentResult:
         response = response.strip()
@@ -131,6 +148,30 @@ class CodeGenerationAgent(BaseAgent):
                 "status": "pending_materialization",
             }, ensure_ascii=False, indent=2),
         }, response)
+
+
+def _format_test_failure_context(ctx: AgentContext) -> str:
+    context = str(getattr(ctx.pipeline, "test_failure_context", "") or "").strip()
+    if not context:
+        return ""
+    return (
+        "\n\nPrevious generated tests failed. Treat the following failure brief as first-class evidence. "
+        "Before editing, identify the likely implementation failure mode, inspect the implicated production "
+        "code and neighboring callers with tools, then make the smallest production-code fix that satisfies "
+        "the preserved generated tests. Do not weaken, delete, or rewrite those tests.\n\n"
+        f"Failure brief:\n{context}\n"
+    )
+
+
+def _format_review_blocker_context(ctx: AgentContext) -> str:
+    context = str(getattr(ctx.pipeline, "review_blocker_context", "") or "").strip()
+    if not context:
+        return ""
+    return (
+        "\n\nPrevious code review found BLOCKER issues that MUST be fixed in this implementation. "
+        "Address every BLOCKER before finishing.\n\n"
+        f"Review blockers:\n{context}\n"
+    )
 
 
 def _build_workspace_patch(source_repo: Path, workspace: Path) -> str:
@@ -172,6 +213,8 @@ def _collect_text_paths(root: Path) -> set[Path]:
             continue
         rel = path.relative_to(root)
         if any(part in _IGNORE_DIRS for part in rel.parts):
+            continue
+        if path.name in _IGNORE_NAMES:
             continue
         if path.suffix.lower() in _IGNORE_SUFFIXES:
             continue

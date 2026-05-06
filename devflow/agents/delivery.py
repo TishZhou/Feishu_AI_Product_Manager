@@ -50,6 +50,11 @@ class DeliveryAgent(BaseAgent):
             lines = final_diff.splitlines()
             final_diff = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
+        # `git apply` requires the patch to end with a newline; an earlier .strip()
+        # removes it. Re-add unconditionally — `git apply` ignores extra blank lines.
+        if final_diff and not final_diff.endswith("\n"):
+            final_diff += "\n"
+
         return self._ok(ctx, {
             "delivery_summary.md": delivery_summary,
             "final_diff.patch": final_diff,

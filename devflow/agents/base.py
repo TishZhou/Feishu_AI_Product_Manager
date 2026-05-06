@@ -44,6 +44,7 @@ class BaseAgent(ABC):
     async def run(self, ctx: AgentContext) -> AgentResult:
         from devflow.providers.router import ToolDispatcher
         from devflow.tools.patch_tools import PATCH_TOOL_SCHEMAS, apply_patch
+        from devflow.tools.command_runner import run_command
         from devflow.tools.repo_tools import (
             REPO_TOOL_SCHEMAS,
             list_dir,
@@ -53,6 +54,7 @@ class BaseAgent(ABC):
             write_file,
         )
         from devflow.tools.test_runner import TEST_TOOL_SCHEMAS, run_test
+        from devflow.services.test_progress import get_test_progress_recorder
 
         missing_inputs = self._missing_required_inputs(ctx)
         if missing_inputs:
@@ -62,6 +64,9 @@ class BaseAgent(ABC):
         # Build a tool dispatcher bound to this run's repo_path
         dispatcher = ToolDispatcher()
         repo = ctx.repo_path
+        test_progress = get_test_progress_recorder(ctx.run_id) if ctx.stage_key == "test_generation" else None
+        if test_progress:
+            test_progress.prepare()
 
         dispatcher.register("list_dir", lambda path: list_dir(path, repo))
         dispatcher.register("read_file", lambda path: read_file(path, repo))
@@ -69,7 +74,15 @@ class BaseAgent(ABC):
         dispatcher.register("write_file", lambda path, content: write_file(path, content, repo))
         dispatcher.register("edit_file", lambda path, old_str, new_str: edit_file(path, old_str, new_str, repo))
         dispatcher.register("apply_patch", lambda patch_content, check_only=False: apply_patch(patch_content, repo, check_only))
-        dispatcher.register("run_test", lambda test_path: run_test(test_path, repo))
+        dispatcher.register("run_command", lambda command, cwd=".", timeout_seconds=120: run_command(command, repo, cwd, timeout_seconds))
+        dispatcher.register(
+            "run_test",
+            lambda test_path: run_test(
+                test_path,
+                repo,
+                progress_callback=test_progress.handle_event if test_progress else None,
+            ),
+        )
 
         system_prompt = self.build_system_prompt(ctx)
         user_prompt = self.build_user_prompt(ctx)
@@ -84,6 +97,8 @@ class BaseAgent(ABC):
             tool_dispatcher=dispatcher if tools else None,
             json_mode=self.json_mode(),
             max_tokens=self.max_tokens(),
+            max_tool_rounds=self.max_tool_rounds(),
+            cache_key=f"devflow:{ctx.stage_key}",
         )
 
         return self.parse_response(raw_response, ctx)
@@ -102,6 +117,9 @@ class BaseAgent(ABC):
 
     def max_tokens(self) -> int | None:
         return None
+
+    def max_tool_rounds(self) -> int:
+        return 25
 
     @abstractmethod
     def parse_response(self, response: str, ctx: AgentContext) -> AgentResult: ...

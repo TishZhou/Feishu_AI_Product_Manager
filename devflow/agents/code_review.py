@@ -6,6 +6,7 @@ from devflow.agents.base import AgentContext, AgentResult, BaseAgent
 from devflow.agents.prompts import code_review as prompts
 from devflow.artifacts.patch_materializer import build_patch_review_payload
 from devflow.config import settings
+from devflow.tools.command_runner import COMMAND_TOOL_SCHEMAS
 from devflow.tools.repo_tools import REPO_TOOL_SCHEMAS
 from devflow.tools.test_runner import TEST_TOOL_SCHEMAS
 
@@ -21,7 +22,13 @@ class CodeReviewAgent(BaseAgent):
         ("code_generation", "generated_files_manifest.json"),
         ("test_generation", "test_report.json"),
     ]
-    output_artifacts = ["review_report.md"]
+    output_artifacts = ["review_report.json", "review_report.md"]
+
+    def json_mode(self) -> bool:
+        return True
+
+    def max_tool_rounds(self) -> int:
+        return 15
 
     def build_system_prompt(self, ctx: AgentContext) -> str:
         return prompts.SYSTEM
@@ -50,17 +57,63 @@ class CodeReviewAgent(BaseAgent):
             detailed_spec=spec,
             solution_contract=solution_contract,
             repo_path=ctx.repo_path,
-        )
+        ) + _format_previous_review(ctx)
 
     def get_tools(self) -> list[dict]:
         # Review is read-only, but it may inspect context and re-run focused tests in the patched workspace.
-        return [REPO_TOOL_SCHEMAS[i] for i in (0, 1, 2)] + TEST_TOOL_SCHEMAS
+        return [REPO_TOOL_SCHEMAS[i] for i in (0, 1, 2)] + TEST_TOOL_SCHEMAS + COMMAND_TOOL_SCHEMAS
 
     def parse_response(self, response: str, ctx: AgentContext) -> AgentResult:
         content = response.strip()
         if not content:
             return self._fail(ctx, "Empty response from LLM")
-        return self._ok(ctx, {"review_report.md": content}, content)
+
+        # Strip markdown fences if the model wrapped the JSON
+        if content.startswith("```"):
+            lines = content.splitlines()
+            content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+        try:
+            report = json.loads(content)
+            if not isinstance(report, dict):
+                raise ValueError("top-level value must be an object")
+        except (json.JSONDecodeError, ValueError):
+            # Fallback: treat the whole response as markdown, synthesise a minimal JSON
+            fallback_json = json.dumps({
+                "verdict": "unknown",
+                "conclusion": "解析失败",
+                "blocker_count": 0,
+                "major_count": 0,
+                "findings": [],
+                "parse_error": content[:500],
+            }, ensure_ascii=False, indent=2)
+            return self._ok(ctx, {
+                "review_report.json": fallback_json,
+                "review_report.md": response,
+            }, response)
+
+        markdown = str(report.get("report_markdown") or "").strip() or response
+        # Store the JSON without the embedded markdown (saves space in artifacts)
+        json_artifact = {k: v for k, v in report.items() if k != "report_markdown"}
+        return self._ok(ctx, {
+            "review_report.json": json.dumps(json_artifact, ensure_ascii=False, indent=2),
+            "review_report.md": markdown,
+        }, response)
+
+
+def _format_previous_review(ctx: AgentContext) -> str:
+    prior = str(getattr(ctx.pipeline, "previous_review_report", "") or "").strip()
+    if not prior:
+        return ""
+    return (
+        "\n\n上一次审查记录（基于上一版代码，已重新生成代码后请验证）：\n"
+        f"{prior}\n\n"
+        "重要：\n"
+        "- 这是 retry 审查，不要重新从零罗列通用风险；优先对照上次的 findings 逐条验证：哪些已修复、哪些仍残留、哪些是新引入的回归。\n"
+        "- 只有当新 diff 引入了新的风险面时，才补充少量 targeted risk hypotheses。\n"
+        "- 已修复的问题不要重复 flag；仍残留的 BLOCKER 必须再次报告。\n"
+        "- 在 report_markdown 的「上一轮问题验证」中说明上一轮 BLOCKER 的处理情况。\n"
+    )
 
 
 def _ensure_dict(value: Any) -> dict[str, Any]:

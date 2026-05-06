@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from devflow.artifacts.patch_materializer import build_patch_review_payload
+from devflow.config import settings
 from devflow.core.background import task_manager
 from devflow.core.orchestrator import orchestrator
 from devflow.core.state_machine import RunState
@@ -16,6 +17,8 @@ from devflow.db.engine import AsyncSessionLocal, get_session
 from devflow.db.models import Artifact, PipelineRun, StageResult
 from devflow.schemas.artifact import ArtifactRead
 from devflow.schemas.run import ClarificationRequest, RunRead, StageResultRead
+from devflow.services.source_apply import get_application_status, rollback_source
+from devflow.services.test_progress import load_test_progress, progress_from_report
 
 router = APIRouter(tags=["Runs"])
 
@@ -30,6 +33,29 @@ async def _get_run_or_404(run_id: str, session: AsyncSession) -> PipelineRun:
 @router.get("/runs/{run_id}", response_model=RunRead)
 async def get_run(run_id: str, session: AsyncSession = Depends(get_session)):
     return await _get_run_or_404(run_id, session)
+
+
+def _artifacts_dir_for(run_id: str) -> Path:
+    return Path(settings.ARTIFACTS_DIR) / run_id
+
+
+@router.get("/runs/{run_id}/source-application")
+async def get_source_application_status(
+    run_id: str, session: AsyncSession = Depends(get_session)
+):
+    """Whether this run's patch was applied to the source repo, and if so when."""
+    await _get_run_or_404(run_id, session)
+    return get_application_status(run_id, _artifacts_dir_for(run_id))
+
+
+@router.post("/runs/{run_id}/rollback")
+async def rollback_run(run_id: str, session: AsyncSession = Depends(get_session)):
+    """Restore source files to the snapshot taken before delivery applied this run."""
+    await _get_run_or_404(run_id, session)
+    result = rollback_source(run_id, _artifacts_dir_for(run_id))
+    if result.get("status") in {"failed", "not_found"}:
+        raise HTTPException(404 if result["status"] == "not_found" else 500, detail=result)
+    return result
 
 
 @router.get("/runs/{run_id}/stages", response_model=list[StageResultRead])
@@ -221,6 +247,25 @@ async def get_run_code_review_files(run_id: str, session: AsyncSession = Depends
         "generated_files_manifest.json": manifest_artifact.id if manifest_artifact else "",
     }
     return payload
+
+
+@router.get("/runs/{run_id}/test-progress")
+async def get_run_test_progress(run_id: str, session: AsyncSession = Depends(get_session)):
+    await _get_run_or_404(run_id, session)
+
+    progress = load_test_progress(run_id)
+    if progress.get("status") != "idle":
+        return progress
+
+    report_text = await _read_run_artifact(run_id, "test_report.json", session)
+    if report_text:
+        try:
+            report = json.loads(report_text)
+        except json.JSONDecodeError:
+            report = {}
+        if isinstance(report, dict):
+            return progress_from_report(run_id, report)
+    return progress
 
 
 def _sse_payload(stage_key: str, message: str, level: str = "info") -> str:

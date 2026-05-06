@@ -20,6 +20,33 @@ export interface PipelineCreate {
   reference_sources?: string
   provider?: string
   model?: string
+  confirm_self_modification?: boolean
+}
+
+export interface RepoCheck {
+  path: string
+  exists: boolean
+  is_directory?: boolean
+  is_self_repo?: boolean
+  is_git_repo?: boolean
+  source_root?: string
+}
+
+export interface SourceApplicationStatus {
+  applied: boolean
+  rolled_back: boolean
+  applied_at?: string
+  rolled_back_at?: string
+  source_repo?: string
+  files?: string[]
+}
+
+export interface RollbackResult {
+  status: 'rolled_back' | 'already_rolled_back' | 'not_found' | 'failed' | string
+  run_id: string
+  restored_files?: string[]
+  removed_files?: string[]
+  error?: string
 }
 
 export interface ReferenceDocumentContext {
@@ -167,6 +194,20 @@ export interface TestRunResult {
   duration_seconds?: number
 }
 
+export interface CommandRunResult {
+  command?: string
+  normalized_command?: string
+  cwd?: string
+  success?: boolean
+  exit_code?: number
+  stdout?: string
+  stderr?: string
+  error?: string
+  summary?: string
+  duration_seconds?: number
+  blocked?: boolean
+}
+
 export interface TestReport {
   test_file?: string
   test_files?: string[]
@@ -183,7 +224,31 @@ export interface TestReport {
   runner_validation?: {
     validated?: boolean
     runs?: TestRunResult[]
+    commands?: CommandRunResult[]
   }
+}
+
+export interface TestProgressEvent {
+  time: string
+  stream: 'stdout' | 'stderr' | 'system' | string
+  line: string
+}
+
+export interface TestProgress {
+  run_id: string
+  status: 'idle' | 'preparing' | 'running' | 'passed' | 'failed' | string
+  active_test_path: string
+  test_files: string[]
+  test_cases: TestCaseResult[]
+  runs: TestRunResult[]
+  events: TestProgressEvent[]
+  total: number
+  passed: number
+  failed: number
+  skipped: number
+  exit_code?: number | null
+  started_at?: string | null
+  updated_at?: string | null
 }
 
 export const STAGES = [
@@ -201,4 +266,5 @@ export const STAGE_KEYS = STAGES.map((s) => s.key)
 export const CHECKPOINT_AFTER: Record<string, number> = {
   detailed_spec: 1,
   code_review: 2,
+  delivery: 3,
 }

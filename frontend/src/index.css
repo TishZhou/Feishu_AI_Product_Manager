@@ -12,9 +12,7 @@
 html, body, #root { height: 100%; margin: 0; }
 
 body {
-  background:
-    radial-gradient(ellipse 100% 65% at 50% 0%, #1a3566 0%, #071525 55%, #040e1c 100%);
-  background-attachment: fixed;
+
   color: rgba(255,255,255,0.85);
   font-family: 'Inter', 'PingFang SC', 'Noto Sans SC', sans-serif;
   -webkit-font-smoothing: antialiased;

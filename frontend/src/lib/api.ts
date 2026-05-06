@@ -2,7 +2,10 @@ import axios from 'axios'
 import type {
   Pipeline,
   PipelineCreate,
+  RepoCheck,
+  RollbackResult,
   Run,
+  SourceApplicationStatus,
   StageResult,
   Artifact,
   Checkpoint,
@@ -10,6 +13,7 @@ import type {
   ClarificationSubmit,
   ClarificationPayload,
   CodeReviewFilesPayload,
+  TestProgress,
 } from '../types/api'
 
 export const DEFAULT_REPO_PATH =
@@ -55,6 +59,9 @@ export const apiClient = {
 
   getCodeReviewFiles: (runId: string) =>
     api.get<CodeReviewFilesPayload>(`/api/runs/${runId}/code-review-files`).then((r) => r.data),
+
+  getTestProgress: (runId: string) =>
+    api.get<TestProgress>(`/api/runs/${runId}/test-progress`).then((r) => r.data),
 
   pauseRun: (runId: string) =>
     api.post(`/api/runs/${runId}/pause`).then((r) => r.data),
@@ -117,4 +124,13 @@ export const apiClient = {
       return { path: DEFAULT_REPO_PATH }
     }
   },
+
+  checkRepo: (path: string) =>
+    api.get<RepoCheck>('/api/repo-check', { params: { path } }).then((r) => r.data),
+
+  getSourceApplicationStatus: (runId: string) =>
+    api.get<SourceApplicationStatus>(`/api/runs/${runId}/source-application`).then((r) => r.data),
+
+  rollbackRun: (runId: string) =>
+    api.post<RollbackResult>(`/api/runs/${runId}/rollback`).then((r) => r.data),
 }

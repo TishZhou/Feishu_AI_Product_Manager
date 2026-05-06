@@ -148,11 +148,17 @@ function CheckpointRow({ num, active }: { num: number; active: boolean }) {
   )
 }
 
+function latestStageForKey(stages: StageResult[], key: string) {
+  return stages
+    .filter(stage => stage.stage_key === key)
+    .sort((a, b) => b.attempt - a.attempt)[0]
+}
+
 export function PipelineGraph({ stages, runStatus, selectedStageKey, onStageClick }: PipelineGraphProps) {
   const items = useMemo<NodeItem[]>(() => {
     const result: NodeItem[] = []
     STAGES.forEach(def => {
-      const r = stages.find(s => s.stage_key === def.key)
+      const r = latestStageForKey(stages, def.key)
       result.push({
         kind: 'stage', key: def.key, label: def.label, index: def.index,
         status: r?.status ?? 'pending', duration: r?.duration_seconds ?? 0,

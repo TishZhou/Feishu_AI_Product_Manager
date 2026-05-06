@@ -11,6 +11,36 @@ export function useWorkspace() {
   })
 }
 
+export function useRepoCheck(path: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['repo-check', path],
+    queryFn: () => apiClient.checkRepo(path),
+    enabled: enabled && path.length > 0,
+    staleTime: 5_000,
+    retry: false,
+  })
+}
+
+export function useSourceApplicationStatus(runId: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['source-application', runId],
+    queryFn: () => apiClient.getSourceApplicationStatus(runId!),
+    enabled: enabled && !!runId,
+    refetchInterval: (query) => (query.state.data?.applied ? false : 4000),
+    retry: false,
+  })
+}
+
+export function useRollbackRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) => apiClient.rollbackRun(runId),
+    onSuccess: (_data, runId) => {
+      qc.invalidateQueries({ queryKey: ['source-application', runId] })
+    },
+  })
+}
+
 export function useCreatePipeline() {
   return useMutation({
     mutationFn: (data: PipelineCreate) => apiClient.createPipeline(data),
@@ -76,6 +106,18 @@ export function useCodeReviewFiles(runId: string | null, enabled = true) {
     queryFn: () => apiClient.getCodeReviewFiles(runId!),
     enabled: !!runId && enabled,
     refetchInterval: enabled ? 2000 : false,
+  })
+}
+
+export function useTestProgress(runId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['run', runId, 'test-progress'],
+    queryFn: () => apiClient.getTestProgress(runId!),
+    enabled: !!runId && enabled,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return enabled && (!status || ['preparing', 'running'].includes(status)) ? 1000 : 2000
+    },
   })
 }
 

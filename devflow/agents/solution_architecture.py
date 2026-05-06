@@ -2,7 +2,11 @@ import json
 
 from devflow.agents.base import AgentContext, AgentResult, BaseAgent
 from devflow.agents.prompts import solution_architecture as prompts
-from devflow.services.repo_map import build_repo_context_summary, repo_context_to_json
+from devflow.services.repo_map import (
+    build_repo_context_summary,
+    compact_repo_context_for_prompt,
+    repo_context_to_json,
+)
 from devflow.tools.repo_tools import REPO_TOOL_SCHEMAS
 
 _SEPARATOR = "---SOLUTION_CONTRACT_JSON---"
@@ -68,12 +72,14 @@ class SolutionArchitectureAgent(BaseAgent):
     def build_user_prompt(self, ctx: AgentContext) -> str:
         req_spec = self._get_artifact(ctx, "requirement_analysis", "requirement_spec.json", "{}")
         repo_context = build_repo_context_summary(ctx.repo_path, req_spec)
+        # Save full context to artifact, but feed only the compact version to the LLM.
         self._repo_context_summary = repo_context_to_json(repo_context)
+        compact_context = compact_repo_context_for_prompt(repo_context)
         if isinstance(req_spec, dict):
             req_spec = json.dumps(req_spec, indent=2, ensure_ascii=False)
         return prompts.USER_TMPL.format(
             requirement_spec=req_spec,
-            repo_context_summary=self._repo_context_summary,
+            repo_context_summary=compact_context,
             repo_path=ctx.repo_path,
         )
 
@@ -121,7 +127,7 @@ The JSON object must match the Stage 2A solution_contract schema."""
 {req_spec}
 
 Repo context summary:
-{getattr(self, "_repo_context_summary", "{}")}
+{compact_repo_context_for_prompt(getattr(self, "_repo_context_summary", "{}"))}
 
 Human-readable solution_design.md:
 {design}
@@ -137,6 +143,7 @@ Generate solution_contract.json now. Use only real paths from the repo context s
             tool_dispatcher=None,
             json_mode=True,
             max_tokens=3500,
+            cache_key="devflow:solution_architecture:repair",
         )
         contract_text = _extract_json_object(repaired)
         try:

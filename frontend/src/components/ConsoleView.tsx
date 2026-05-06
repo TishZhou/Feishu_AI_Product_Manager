@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react'
-import { Play, Pause, Square, Activity, Clock, ChevronLeft } from 'lucide-react'
-import { useRun, useRunStages, useRunActions, useRunArtifacts, useRunCheckpoints } from '../hooks/useDevFlow'
+import { Play, Pause, Square, Activity, Clock, ChevronLeft, RotateCcw, CheckCircle2 } from 'lucide-react'
+import {
+  useRun,
+  useRunStages,
+  useRunActions,
+  useRunArtifacts,
+  useRunCheckpoints,
+  useSourceApplicationStatus,
+  useRollbackRun,
+} from '../hooks/useDevFlow'
 import { PipelineGraph } from './PipelineGraph'
 import { StageDetail } from './StageDetail'
 import { LogStream } from './LogStream'
 import { CheckpointModal } from './CheckpointModal'
 import { ClarificationModal } from './ClarificationModal'
 import { ArtifactViewer } from './ArtifactViewer'
-import type { Artifact, RunStatus } from '../types/api'
+import { TestProgressWindow } from './TestProgressWindow'
+import { STAGES } from '../types/api'
+import type { Artifact, RunStatus, StageResult } from '../types/api'
 
 interface ConsoleViewProps {
   runId: string
@@ -40,11 +50,23 @@ const STAGE_TINT: Record<string, string> = {
   pending:   'transparent',
 }
 
+function latestStageForKey<T extends { stage_key: string; attempt: number }>(stages: T[], key: string) {
+  return stages
+    .filter(stage => stage.stage_key === key)
+    .sort((a, b) => b.attempt - a.attempt)[0]
+}
+
+function isStageResult(stage: StageResult | undefined): stage is StageResult {
+  return !!stage
+}
+
 export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
   const { data: run }             = useRun(runId)
   const { data: stages = [] }     = useRunStages(runId)
   const { data: artifacts = [] }  = useRunArtifacts(runId)
   const { data: checkpoints = [] }= useRunCheckpoints(runId)
+  const { data: sourceApp }       = useSourceApplicationStatus(runId)
+  const rollback                  = useRollbackRun()
   const { pause, resume, terminate } = useRunActions()
 
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null)
@@ -63,14 +85,15 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
     setViewingStageKey(prev => prev === key ? null : key)
   }
 
-  const runningStage = stages.find(s => s.status === 'running')
+  const progressStages = STAGES.map(stage => latestStageForKey(stages, stage.key)).filter(isStageResult)
+  const runningStage = progressStages.find(s => s.status === 'running')
   const selectedStageKey = runningStage?.stage_key === viewingStageKey ? null : viewingStageKey
 
   const activeStageTint = (() => {
-    const viewed = selectedStageKey ? stages.find(s => s.stage_key === selectedStageKey) : null
+    const viewed = selectedStageKey ? latestStageForKey(stages, selectedStageKey) : null
     if (viewed) return STAGE_TINT[viewed.status] ?? 'transparent'
     if (runningStage) return STAGE_TINT.running
-    const last = stages[stages.length - 1]
+    const last = [...progressStages].reverse().find(s => s.status !== 'pending')
     return STAGE_TINT[last?.status ?? 'pending'] ?? 'transparent'
   })()
 
@@ -171,6 +194,53 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
         </div>
       </header>
 
+      {/* Source-application banner — visible after delivery applied to source */}
+      {sourceApp?.applied && (
+        <div
+          className="shrink-0 relative z-20 px-5 py-2.5 flex items-center justify-between gap-4 text-[12px]"
+          style={{
+            background: sourceApp.rolled_back
+              ? 'linear-gradient(90deg, rgba(100,116,139,0.18), rgba(71,85,105,0.10))'
+              : 'linear-gradient(90deg, rgba(16,185,129,0.18), rgba(5,150,105,0.10))',
+            borderBottom: sourceApp.rolled_back
+              ? '1px solid rgba(148,163,184,0.25)'
+              : '1px solid rgba(16,185,129,0.32)',
+          }}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            {sourceApp.rolled_back ? (
+              <RotateCcw className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            )}
+            <span className={sourceApp.rolled_back ? 'text-slate-300' : 'text-emerald-200'}>
+              {sourceApp.rolled_back ? '已撤回' : '已应用到源仓库'}
+            </span>
+            <span className="text-slate-400/80 truncate font-mono text-[11px]">
+              {sourceApp.source_repo}
+            </span>
+            {!!sourceApp.files?.length && (
+              <span className="text-slate-400/70 text-[11px]">· {sourceApp.files.length} 个文件</span>
+            )}
+          </div>
+          {!sourceApp.rolled_back && (
+            <button
+              onClick={() => {
+                if (!run) return
+                if (!confirm(`将恢复 ${sourceApp.files?.length ?? 0} 个文件到 apply 之前的状态。继续？`)) return
+                rollback.mutate(run.id)
+              }}
+              disabled={rollback.isPending}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-colors disabled:opacity-60"
+              style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(255,255,255,0.12)', color: '#fcd34d' }}
+            >
+              <RotateCcw className="w-3 h-3" />
+              {rollback.isPending ? '撤回中...' : '撤回应用'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ════ BODY ════ */}
       <div className="flex-1 flex overflow-hidden relative z-10">
 
@@ -183,7 +253,7 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-blue-400/50 mb-2.5">流水线阶段</p>
             {/* Mini progress bar */}
             <div className="flex gap-[3px]">
-              {stages.map(s => (
+              {progressStages.map(s => (
                 <div key={s.stage_key} className="h-[3px] flex-1 rounded-full overflow-hidden"
                   style={{ background: 'rgba(255,255,255,0.06)' }}>
                   <div className="h-full rounded-full transition-all duration-700"
@@ -243,6 +313,8 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
           <div className="shrink-0 relative z-10" style={{ height: '42%' }}>
             <LogStream stages={stages} runStatus={run.status} runId={runId} />
           </div>
+
+          <TestProgressWindow runId={runId} stages={stages} />
         </div>
       </div>
 

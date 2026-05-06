@@ -112,6 +112,7 @@ def write_file(path: str, content: str, repo_path: str) -> dict:
     target = _resolve_repo_path(repo_path, path)
     if target is None:
         return {"error": f"Path escapes repo root: {path}"}
+    content = _unescape_if_needed(content)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"path": path, "size": target.stat().st_size}
@@ -124,6 +125,8 @@ def edit_file(path: str, old_str: str, new_str: str, repo_path: str) -> dict:
         return {"error": f"Path escapes repo root: {path}"}
     if not path or old_str == new_str:
         return {"error": "invalid input parameters"}
+
+    new_str = _unescape_if_needed(new_str)
 
     if not target.exists():
         if old_str:
@@ -148,6 +151,14 @@ def edit_file(path: str, old_str: str, new_str: str, repo_path: str) -> dict:
 
     target.write_text(content.replace(old_str, new_str, 1), encoding="utf-8")
     return {"path": path, "action": "edited", "size": target.stat().st_size}
+
+
+def _unescape_if_needed(content: str) -> str:
+    # LLMs sometimes double-escape newlines (sending \\n in JSON → literal \+n in Python).
+    # Detect this when the string has no real newlines but has the two-char sequence.
+    if "\n" not in content and "\\n" in content:
+        return content.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
+    return content
 
 
 def _resolve_repo_path(repo_path: str, path: str) -> Path | None:

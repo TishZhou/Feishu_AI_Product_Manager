@@ -19,6 +19,13 @@ def test_all_agents_declare_valid_io_contracts():
             assert filename in produced_by_stage[input_stage]
 
 
+def test_delivery_requires_human_confirmation_before_git_publish():
+    delivery = STAGE_BY_KEY["delivery"]
+
+    assert delivery.checkpoint_after == 3
+    assert delivery.checkpoint_default_retry == "code_review"
+
+
 def test_agent_init_rejects_output_contract_drift():
     stage = STAGE_BY_KEY["requirement_analysis"]
     agent_class = stage.get_agent_class()

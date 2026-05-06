@@ -8,7 +8,8 @@ import {
   Terminal,
   XCircle,
 } from 'lucide-react'
-import type { GeneratedTestFile, TestCaseResult, TestReport, TestRunResult } from '../types/api'
+import type { CommandRunResult, GeneratedTestFile, TestCaseResult, TestReport, TestRunResult } from '../types/api'
+import { parseTestReport } from '../lib/testReport'
 
 interface TestReportViewProps {
   content: string
@@ -26,33 +27,14 @@ interface NormalizedReport {
   tests: TestCaseResult[]
   files: GeneratedTestFile[]
   runs: TestRunResult[]
-}
-
-export function parseTestReport(content: string): TestReport | null {
-  if (!content.trim()) return null
-  try {
-    const parsed = JSON.parse(content)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    const candidate = parsed as TestReport
-    if (
-      'test_file' in candidate ||
-      'test_files' in candidate ||
-      'test_cases' in candidate ||
-      'runner_validation' in candidate ||
-      'generated_test_files' in candidate
-    ) {
-      return candidate
-    }
-  } catch {
-    return null
-  }
-  return null
+  commands: CommandRunResult[]
 }
 
 function normalizeReport(content: string): NormalizedReport | null {
   const report = parseTestReport(content)
   if (!report) return null
   const runs = Array.isArray(report.runner_validation?.runs) ? report.runner_validation.runs : []
+  const commands = Array.isArray(report.runner_validation?.commands) ? report.runner_validation.commands : []
   const firstCounts = runs[0]?.counts ?? {}
   const passed = asNumber(report.passed, firstCounts.passed)
   const failed = asNumber(report.failed, firstCounts.failed, firstCounts.errors)
@@ -72,6 +54,7 @@ function normalizeReport(content: string): NormalizedReport | null {
     tests,
     files,
     runs,
+    commands,
   }
 }
 
@@ -193,7 +176,7 @@ function TestCaseRow({ test }: { test: TestCaseResult }) {
       <Icon className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color }} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-mono truncate" style={{ color: 'rgba(255,255,255,0.70)' }}>
-          {test.name || test.id || 'unnamed test'}
+          {test.name || test.id || '未命名测试'}
         </p>
         {test.message && (
           <p className="text-[10px] mt-1 leading-relaxed" style={{ color: 'rgba(255,255,255,0.36)' }}>
@@ -201,7 +184,7 @@ function TestCaseRow({ test }: { test: TestCaseResult }) {
           </p>
         )}
       </div>
-      <span className="text-[9px] font-mono shrink-0 uppercase" style={{ color }}>{status}</span>
+      <span className="text-[9px] font-mono shrink-0 uppercase" style={{ color }}>{status === 'passed' ? '通过' : status === 'failed' ? '失败' : status === 'skipped' ? '跳过' : status}</span>
     </div>
   )
 }
@@ -210,7 +193,7 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
   const normalized = normalizeReport(content)
   if (!normalized) return null
 
-  const { report, total, passed, failed, skipped, exitCode, success, tests, files, runs } = normalized
+  const { report, total, passed, failed, skipped, exitCode, success, tests, files, runs, commands } = normalized
   const primaryRun = runs[0]
   const statusColor = success ? 'rgba(120,255,190,0.76)' : 'rgba(255,180,175,0.78)'
   const StatusIcon = success ? CheckCircle2 : XCircle
@@ -267,10 +250,10 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
         </div>
 
         <div className="grid grid-cols-4 gap-2 mt-4">
-          <StatPill label="Total" value={total} tone="muted" />
-          <StatPill label="Passed" value={passed} tone="ok" />
-          <StatPill label="Failed" value={failed} tone={failed ? 'bad' : 'muted'} />
-          <StatPill label="Skipped" value={skipped} tone={skipped ? 'warn' : 'muted'} />
+          <StatPill label="总数" value={total} tone="muted" />
+          <StatPill label="通过" value={passed} tone="ok" />
+          <StatPill label="失败" value={failed} tone={failed ? 'bad' : 'muted'} />
+          <StatPill label="跳过" value={skipped} tone={skipped ? 'warn' : 'muted'} />
         </div>
         <div className="mt-4">
           <ResultBar passed={passed} failed={failed} skipped={skipped} total={total} />
@@ -281,7 +264,7 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
         <div>
           <div className="flex items-center gap-2 mb-2" style={{ color: 'rgba(255,255,255,0.48)' }}>
             <ListChecks className="w-3.5 h-3.5" />
-            <span className="text-[10px] font-medium uppercase tracking-[0.18em]">test cases</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em]">测试用例</span>
           </div>
           <div className="rounded-xl px-3" style={{ background: 'rgba(255,255,255,0.025)', boxShadow: '0 0 0 1px rgba(255,255,255,0.07)' }}>
             {tests.map((test, index) => <TestCaseRow key={`${test.id || test.name || 'case'}-${index}`} test={test} />)}
@@ -292,7 +275,7 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
       <div className="space-y-3">
         <div className="flex items-center gap-2" style={{ color: 'rgba(255,255,255,0.48)' }}>
           <FileCode2 className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-medium uppercase tracking-[0.18em]">generated test code</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em]">生成的测试代码</span>
         </div>
         {visibleFiles.length > 0 ? (
           visibleFiles.map((file) => (
@@ -303,7 +286,7 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
                 </span>
                 {file.truncated && (
                   <span className="text-[9px] font-mono shrink-0" style={{ color: 'rgba(255,220,150,0.66)' }}>
-                    truncated
+                    已截断
                   </span>
                 )}
               </div>
@@ -326,14 +309,14 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
       <div className="space-y-3">
         <div className="flex items-center gap-2" style={{ color: 'rgba(255,255,255,0.48)' }}>
           <Terminal className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-medium uppercase tracking-[0.18em]">execution output</span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.18em]">执行输出</span>
         </div>
         {visibleRuns.length > 0 ? (
           visibleRuns.map((run, index) => (
             <div key={`${run.test_path || 'run'}-${index}`} className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
                 <span style={{ color: run.success ? 'rgba(120,255,190,0.70)' : 'rgba(255,180,175,0.74)' }}>
-                  {run.success ? 'passed' : 'failed'} · {run.test_path || report.test_file || 'pytest'}
+                  {run.success ? '通过' : '失败'} · {run.test_path || report.test_file || 'pytest'}
                 </span>
                 <span style={{ color: 'rgba(255,255,255,0.32)' }}>{run.summary || report.summary}</span>
               </div>
@@ -345,6 +328,29 @@ export function TestReportView({ content, compact = false }: TestReportViewProps
           <TerminalBlock title="error_log" text={report.error_log || '暂无执行输出'} compact={compact} />
         )}
       </div>
+
+      {commands.length > 0 && !compact && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2" style={{ color: 'rgba(255,255,255,0.48)' }}>
+            <PlayCircle className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-medium uppercase tracking-[0.18em]">项目级验证命令</span>
+          </div>
+          {commands.map((command, index) => (
+            <div key={`${command.command || 'command'}-${index}`} className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
+                <span style={{ color: command.success ? 'rgba(120,255,190,0.70)' : 'rgba(255,180,175,0.74)' }}>
+                  {command.success ? '通过' : '失败'} · {command.command || command.normalized_command || 'validation'}
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.32)' }}>
+                  {command.summary || command.error || `exit ${command.exit_code ?? '-'}`}
+                </span>
+              </div>
+              <TerminalBlock title="stdout" text={command.stdout || ''} compact={compact} />
+              <TerminalBlock title="stderr" text={command.stderr || command.error || ''} compact={compact} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

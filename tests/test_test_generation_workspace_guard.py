@@ -5,6 +5,7 @@ import pytest
 
 from devflow.agents.base import AgentContext
 from devflow.agents.test_generation import TestGenerationAgent as _TestGenerationAgent
+from devflow.agents.prompts import test_generation as test_generation_prompts
 from devflow.core.pipeline_definition import STAGE_BY_KEY
 
 
@@ -92,3 +93,20 @@ def test_test_generation_report_is_validated_against_pytest(tmp_path):
     assert report["exit_code"] == 0
     assert report["runner_validation"]["validated"] is True
     assert report["generated_test_files"][0]["content"].startswith("def test_ok")
+
+
+def test_test_generation_prompt_uses_failure_analysis_framework():
+    prompt = test_generation_prompts.SYSTEM
+
+    assert "not a checklist" in prompt
+    assert "failure-analysis thinking framework" in prompt
+    assert "about 5" in prompt
+    assert "narrow changes" in prompt
+    assert "On retry, do not brainstorm from" in prompt
+    assert "do not generate broad low-signal tests just to fill a list" in prompt
+    assert "risk_brainstorm" in prompt
+    assert "verification_log" in prompt
+    assert "read_file" in prompt
+    assert "search_code" in prompt
+    assert "run_test" in prompt
+    assert "observable contract tests" in prompt

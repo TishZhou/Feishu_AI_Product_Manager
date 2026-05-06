@@ -1,8 +1,10 @@
 import re
+import selectors
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Callable
 
 
 _SUMMARY_RE = re.compile(
@@ -10,45 +12,106 @@ _SUMMARY_RE = re.compile(
 )
 
 
-def run_test(test_path: str, repo_path: str) -> dict:
+ProgressCallback = Callable[[dict], None]
+
+
+def run_test(test_path: str, repo_path: str, progress_callback: ProgressCallback | None = None) -> dict:
     """Run pytest on test_path relative to repo_path."""
     root = Path(repo_path).resolve()
     full_path = _resolve_test_path(test_path, root)
     if full_path is None:
+        _emit(progress_callback, {"event": "failed", "error": f"Test path escapes repo root: {test_path}"})
         return {
             "success": False,
             "exit_code": -1,
             "error": f"Test path escapes repo root: {test_path}",
         }
     if not full_path.exists():
+        _emit(progress_callback, {"event": "failed", "error": f"Test path not found: {test_path}"})
         return {"success": False, "exit_code": -1, "error": f"Test path not found: {test_path}"}
 
     display_path = str(full_path.relative_to(root))
+    _emit(progress_callback, {"event": "started", "test_path": display_path})
 
     start = time.monotonic()
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [sys.executable, "-m", "pytest", display_path, "-v", "--tb=short", "--no-header"],
             cwd=root,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=120,
+            bufsize=1,
         )
+        stdout, stderr, timed_out = _collect_process_output(process, progress_callback, timeout=120)
         duration = time.monotonic() - start
-        counts = _parse_pytest_counts(result.stdout)
-        return {
-            "success": result.returncode == 0,
-            "exit_code": result.returncode,
+        if timed_out:
+            result = {"success": False, "exit_code": -1, "test_path": display_path, "error": "pytest timed out after 120s"}
+            _emit(progress_callback, {"event": "finished", "result": result})
+            return result
+        counts = _parse_pytest_counts(stdout)
+        result = {
+            "success": process.returncode == 0,
+            "exit_code": process.returncode,
             "test_path": display_path,
             "total": sum(counts.values()),
             "counts": counts,
-            "summary": _extract_pytest_summary(result.stdout) or _build_summary(counts, duration),
-            "stdout": result.stdout[-8000:],  # cap at 8KB
-            "stderr": result.stderr[-2000:],
+            "summary": _extract_pytest_summary(stdout) or _build_summary(counts, duration),
+            "stdout": stdout[-8000:],  # cap at 8KB
+            "stderr": stderr[-2000:],
             "duration_seconds": round(duration, 2),
         }
-    except subprocess.TimeoutExpired:
-        return {"success": False, "exit_code": -1, "error": "pytest timed out after 120s"}
+        _emit(progress_callback, {"event": "finished", "result": result})
+        return result
+    except Exception as exc:
+        result = {"success": False, "exit_code": -1, "test_path": display_path, "error": str(exc)}
+        _emit(progress_callback, {"event": "finished", "result": result})
+        return result
+
+
+def _collect_process_output(
+    process: subprocess.Popen,
+    progress_callback: ProgressCallback | None,
+    timeout: float,
+) -> tuple[str, str, bool]:
+    selector = selectors.DefaultSelector()
+    if process.stdout:
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+    if process.stderr:
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+
+    start = time.monotonic()
+    chunks = {"stdout": [], "stderr": []}
+    timed_out = False
+
+    while selector.get_map():
+        if time.monotonic() - start > timeout:
+            timed_out = True
+            process.kill()
+            break
+        for key, _ in selector.select(timeout=0.1):
+            line = key.fileobj.readline()
+            if line:
+                stream = str(key.data)
+                chunks[stream].append(line)
+                _emit(progress_callback, {"event": "output", "stream": stream, "line": line.rstrip("\n")})
+            else:
+                selector.unregister(key.fileobj)
+        if process.poll() is not None:
+            for key in list(selector.get_map().values()):
+                for line in key.fileobj.readlines():
+                    stream = str(key.data)
+                    chunks[stream].append(line)
+                    _emit(progress_callback, {"event": "output", "stream": stream, "line": line.rstrip("\n")})
+                selector.unregister(key.fileobj)
+
+    process.wait(timeout=2)
+    return "".join(chunks["stdout"]), "".join(chunks["stderr"]), timed_out
+
+
+def _emit(callback: ProgressCallback | None, event: dict) -> None:
+    if callback:
+        callback(event)
 
 
 def _resolve_test_path(test_path: str, root: Path) -> Path | None:

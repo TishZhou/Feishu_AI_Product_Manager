@@ -74,5 +74,8 @@ def test_requirement_prompt_keeps_clarification_separate_from_description():
     prompt = agent.build_user_prompt(ctx)
 
     assert "需求描述：原始需求" in prompt
+    assert "代码仓库 repomap 摘要" in prompt
+    assert '"project_kinds"' in prompt
+    assert '"relevant_files"' in prompt
     assert "用户补充澄清（如为空则表示暂无）：\n回答人：user\n补充说明" in prompt
     assert "需求描述：原始需求\n\n【用户补充澄清】" not in prompt

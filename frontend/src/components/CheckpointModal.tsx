@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, AlertTriangle, RotateCcw, FileCode2, GitPullRequestDraft, ShieldCheck } from 'lucide-react'
+import { Check, X, AlertTriangle, RotateCcw, ShieldCheck } from 'lucide-react'
 import type { Checkpoint, Artifact, CodeReviewFile } from '../types/api'
 import { STAGES } from '../types/api'
 import { useCheckpointActions, useCodeReviewFiles } from '../hooks/useDevFlow'
 import { apiClient } from '../lib/api'
+import { DiffFileExplorer } from './DiffFileExplorer'
 
 interface CheckpointModalProps {
   checkpoint: Checkpoint
@@ -15,70 +16,16 @@ function artifactFolder(runId?: string) {
   return runId ? `artifacts/${runId}/` : 'artifacts/'
 }
 
-function DiffViewer({ text }: { text: string }) {
-  const lines = text.split('\n')
-  return (
-    <div className="text-xs font-mono leading-5 min-h-full py-3"
-      style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>
-      {lines.map((line, idx) => {
-        const isAdded = line.startsWith('+') && !line.startsWith('+++')
-        const isDeleted = line.startsWith('-') && !line.startsWith('---')
-        const isHunk = line.startsWith('@@')
-        const isHeader = line.startsWith('diff --git') || line.startsWith('---') || line.startsWith('+++')
-        const bg = isAdded
-          ? 'rgba(16,185,129,0.15)'
-          : isDeleted
-            ? 'rgba(239,68,68,0.15)'
-            : isHunk
-              ? 'rgba(51,112,255,0.14)'
-              : isHeader
-                ? 'rgba(255,255,255,0.045)'
-                : 'transparent'
-        const color = isAdded
-          ? 'rgba(167,243,208,0.95)'
-          : isDeleted
-            ? 'rgba(254,202,202,0.95)'
-            : isHunk
-              ? 'rgba(191,219,254,0.95)'
-              : isHeader
-                ? 'rgba(226,232,240,0.80)'
-                : 'rgba(203,213,225,0.82)'
-        const borderColor = isAdded
-          ? 'rgba(16,185,129,0.55)'
-          : isDeleted
-            ? 'rgba(239,68,68,0.55)'
-            : 'transparent'
-        return (
-          <div key={idx} className="flex min-w-max"
-            style={{
-              background: bg,
-              color,
-              borderLeft: `2px solid ${borderColor}`,
-            }}>
-            <span className="select-none text-right shrink-0 px-3"
-              style={{ width: 56, color: 'rgba(148,163,184,0.45)' }}>
-              {idx + 1}
-            </span>
-            <span className="whitespace-pre-wrap break-words pr-4 flex-1">
-              {line || ' '}
-            </span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps) {
   const { approve, reject } = useCheckpointActions()
   const [reason, setReason] = useState('')
   const [retryStage, setRetryStage] = useState(checkpoint.retry_stage_key)
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null)
   const [activeReviewFile, setActiveReviewFile] = useState<string | null>(null)
-  const [reviewMode, setReviewMode] = useState<'diff' | 'file'>('diff')
   const [fileDecisions, setFileDecisions] = useState<Record<string, { decision: 'pending' | 'approved' | 'rejected'; note: string }>>({})
   const [content, setContent] = useState<string>('')
   const isCodeCheckpoint = checkpoint.checkpoint_number === 2
+  const isDeliveryCheckpoint = checkpoint.checkpoint_number === 3
   const { data: codeReview } = useCodeReviewFiles(checkpoint.run_id, isCodeCheckpoint)
 
   const requiredStages = useMemo(
@@ -113,7 +60,6 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
   const selectedReviewPath = reviewFiles.some(f => f.path === activeReviewFile)
     ? activeReviewFile
     : reviewFiles[0]?.path ?? null
-  const selectedReviewFile = reviewFiles.find(f => f.path === selectedReviewPath) ?? null
   const patchOk = codeReview?.patch_applied_to_workspace === true
   const reviewedCount = reviewFiles.filter(f => fileDecisions[f.path]?.decision === 'approved').length
   const rejectedFiles = reviewFiles.filter(f => fileDecisions[f.path]?.decision === 'rejected')
@@ -153,6 +99,14 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
     reject.mutate({ id: checkpoint.id, decided_by: '人工审核', reason: finalReason, retry_stage_key: retryStage })
   }
 
+  const approveLabel = isDeliveryCheckpoint ? '确认发布 Git 变更' : '批准并继续'
+  const title = isCodeCheckpoint ? '代码审核' : isDeliveryCheckpoint ? '交付确认' : '方案审核'
+  const subtitle = isDeliveryCheckpoint
+    ? '确认后会创建分支、提交代码，并在可用时发起 draft PR/MR'
+    : isCodeCheckpoint
+      ? '逐文件审查 diff 和生成后的代码，再决定是否继续'
+      : '请仔细审查左侧产物后作出决策'
+
   return (
     <AnimatePresence>
       <motion.div
@@ -173,93 +127,46 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
             background: '#0d1117',
             borderRight: '1px solid rgba(255,255,255,0.06)',
           }}>
-          {/* Tab bar */}
-          <div className="h-14 shrink-0 flex items-end px-2 gap-0.5 overflow-x-auto"
-            style={{ background: '#161b22', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            {isCodeCheckpoint ? (
-              <>
-                {reviewFiles.map(file => (
-                  <button
-                    key={file.path}
-                    onClick={() => setActiveReviewFile(file.path)}
-                    className={`px-4 py-2 text-xs font-mono transition-all border-t-2 rounded-t-md whitespace-nowrap flex items-center gap-2 ${
-                      selectedReviewPath === file.path
-                        ? 'bg-[#0d1117] text-white border-[#3370ff]'
-                        : 'bg-transparent text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-                    }`}
-                  >
-                    <FileCode2 className="w-3.5 h-3.5" />
-                    {file.path}
-                  </button>
-                ))}
-                {reviewFiles.length === 0 && (
-                  <span className="px-4 py-2 text-xs text-slate-600 font-mono">暂无代码变更</span>
-                )}
-              </>
-            ) : (
-              <>
-                {relevantArtifacts.map(a => (
-                  <button
-                    key={a.id}
-                    onClick={() => setActiveArtifactId(a.id)}
-                    className={`px-4 py-2 text-xs font-mono transition-all border-t-2 rounded-t-md whitespace-nowrap ${
-                      selectedArtifactId === a.id
-                        ? 'bg-[#0d1117] text-white border-[#3370ff]'
-                        : 'bg-transparent text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-                    }`}
-                  >
-                    <span className="flex flex-col items-start leading-tight">
-                      <span>{a.filename}</span>
-                      <span className="text-[9px] opacity-55">{artifactFolder(a.run_id)}</span>
-                    </span>
-                  </button>
-                ))}
-                {relevantArtifacts.length === 0 && (
-                  <span className="px-4 py-2 text-xs text-slate-600 font-mono">暂无产物</span>
-                )}
-              </>
-            )}
-          </div>
+          {!isCodeCheckpoint && (
+            <div className="h-14 shrink-0 flex items-end px-2 gap-0.5 overflow-x-auto"
+              style={{ background: '#161b22', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              {relevantArtifacts.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => setActiveArtifactId(a.id)}
+                  className={`px-4 py-2 text-xs font-mono transition-all border-t-2 rounded-t-md whitespace-nowrap ${
+                    selectedArtifactId === a.id
+                      ? 'bg-[#0d1117] text-white border-[#3370ff]'
+                      : 'bg-transparent text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
+                  }`}
+                >
+                  <span className="flex flex-col items-start leading-tight">
+                    <span>{a.filename}</span>
+                    <span className="text-[9px] opacity-55">{artifactFolder(a.run_id)}</span>
+                  </span>
+                </button>
+              ))}
+              {relevantArtifacts.length === 0 && (
+                <span className="px-4 py-2 text-xs text-slate-600 font-mono">暂无产物</span>
+              )}
+            </div>
+          )}
 
           {/* Code viewer */}
           <div className="flex-1 overflow-auto" style={{ background: '#0d1117' }}>
             {isCodeCheckpoint ? (
-              <div className="min-h-full">
-                <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2"
-                  style={{ background: '#0d1117', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <GitPullRequestDraft className="w-4 h-4" />
-                    <span>{selectedReviewFile?.action?.toUpperCase() || 'CHANGE'}</span>
-                    {selectedReviewFile && <span className="text-emerald-400">+{selectedReviewFile.additions}</span>}
-                    {selectedReviewFile && <span className="text-red-400">-{selectedReviewFile.deletions}</span>}
-                  </div>
-                  <div className="flex rounded-lg overflow-hidden border border-white/10">
-                    {(['diff', 'file'] as const).map(mode => (
-                      <button
-                        key={mode}
-                        onClick={() => setReviewMode(mode)}
-                        className={`px-3 py-1.5 text-xs ${reviewMode === mode ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                      >
-                        {mode === 'diff' ? 'Diff' : '完整文件'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {selectedReviewFile
-                  ? reviewMode === 'diff'
-                    ? <DiffViewer text={selectedReviewFile.diff} />
-                    : (
-                      <pre
-                        className="text-xs font-mono text-slate-300 p-4 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
-                        style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
-                      >
-                        {selectedReviewFile.generated_content || '没有生成后的完整文件快照'}
-                      </pre>
-                    )
-                  : (
-                    <pre className="text-xs font-mono text-slate-300 p-4 m-0">加载中...</pre>
-                  )}
-              </div>
+              <DiffFileExplorer
+                files={reviewFiles.map(file => ({
+                  path: file.path,
+                  action: file.action,
+                  diff: file.diff,
+                  additions: file.additions,
+                  deletions: file.deletions,
+                  generated_content: file.generated_content,
+                }))}
+                selectedPath={selectedReviewPath}
+                onSelectPath={setActiveReviewFile}
+              />
             ) : (
               <div className="min-h-full">
                 {selectedArtifact && (
@@ -273,7 +180,7 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
                   </div>
                 )}
                 {selectedArtifact?.filename.endsWith('.patch') ? (
-                  <DiffViewer text={content || '加载中...'} />
+                  <DiffFileExplorer text={content || '加载中...'} showFileMode={false} />
                 ) : (
                   <pre
                     className="text-xs font-mono text-slate-300 p-4 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
@@ -303,13 +210,13 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
             </div>
             <div>
               <h2 className="text-lg font-bold text-white leading-tight">
-                {isCodeCheckpoint ? '代码审核' : '方案审核'}
+                {title}
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 检查点 #{checkpoint.checkpoint_number} · {checkpoint.label}
               </p>
               <p className="text-[11px] text-slate-600 mt-1">
-                {isCodeCheckpoint ? '逐文件审查 diff 和生成后的代码，再决定是否继续' : '请仔细审查左侧产物后作出决策'}
+                {subtitle}
               </p>
             </div>
           </div>
@@ -409,12 +316,16 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
           )}
 
           <button
-            onClick={() => approve.mutate({ id: checkpoint.id, decided_by: '人工审核', reason: '方案通过' })}
+            onClick={() => approve.mutate({
+              id: checkpoint.id,
+              decided_by: '人工审核',
+              reason: isDeliveryCheckpoint ? '确认发布 Git 变更' : '方案通过',
+            })}
             disabled={approve.isPending || !canApproveCode}
             className="btn-approve w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2.5 disabled:opacity-50 mb-5"
           >
             <Check className="w-5 h-5" strokeWidth={2.5} />
-            批准并继续
+            {approveLabel}
           </button>
           {isCodeCheckpoint && !canApproveCode && (
             <p className="text-[11px] text-slate-500 -mt-3 mb-5">

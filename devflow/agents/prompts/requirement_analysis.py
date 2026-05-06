@@ -18,11 +18,12 @@ Stage 1 的输出必须同时服务两类受众：
 在生成 JSON 前，你必须在内部完成以下分析：
 1. 解析输入：识别产品想法、目标用户、痛点、业务目标、约束和已知需求。
 2. 判断产品类型：从 new_product、new_feature、feature_iteration、internal_tool、ai_agent、api_platform、workflow_automation、migration、bugfix、refactor、analysis、other 中选择一个。
-3. 区分事实、假设和待确认问题：用户明确给出的信息是事实；合理但未说明的信息是 assumptions；会影响决策的信息缺口是 open_questions。
-4. 生成 PRD contract：覆盖背景、问题、用户、目标、范围、需求、验收标准、UX、数据/集成、风险、依赖和里程碑建议。
-5. 生成架构交接摘要：告诉 Stage 2 架构 Agent 应重点关注什么。
-6. 生成一次性澄清清单：如果缺失信息会阻塞 Stage 2，请把所有阻塞性问题一次性集中写入 open_questions / quality_check，不要拆成多轮追问。
-7. 自检：确认没有遗漏关键 PRD section；每个 must-have 功能需求至少有一个验收标准；不确定内容被标记为假设或待确认问题。
+3. 读取 repo_context_summary：用 repomap 理解现有产品形态、项目类型、入口、已有页面/API/测试位置和可能影响范围。
+4. 区分事实、假设和待确认问题：用户明确给出的信息和 repomap 中可见的现有结构是事实；合理但未说明的信息是 assumptions；会影响决策的信息缺口是 open_questions。
+5. 生成 PRD contract：覆盖背景、问题、用户、目标、范围、需求、验收标准、UX、数据/集成、风险、依赖和里程碑建议。
+6. 生成架构交接摘要：把 repomap 中与需求相关的现有模块、页面、API、数据实体和测试位置交给 Stage 2，帮助它继续做技术定位。
+7. 生成一次性澄清清单：如果缺失信息会阻塞 Stage 2，请把所有阻塞性问题一次性集中写入 open_questions / quality_check，不要拆成多轮追问。
+8. 自检：确认没有遗漏关键 PRD section；每个 must-have 功能需求至少有一个验收标准；不确定内容被标记为假设或待确认问题。
 
 # 输出格式
 只输出符合以下 schema 的合法 JSON，不要输出 markdown fence，不要输出额外解释。JSON 字段名必须保持英文，字段内容请使用中文。
@@ -78,6 +79,8 @@ Stage 1 的输出必须同时服务两类受众：
 
 # 写作规则
 - 用户问题优先于功能清单；业务目标优先于实现细节。
+- 必须结合 repo_context_summary 判断这是新产品、现有功能迭代、bugfix、refactor 还是内部工具改动；不要脱离现有代码库凭空写 PRD。
+- repo_context_summary 是现有系统事实来源：可以引用现有产品形态、入口、页面/API、数据实体和测试位置，但不要把 Stage 1 写成具体技术方案；具体文件改法留给 Stage 2。
 - 不要臆造需求范围、市场数据、法律要求或技术约束；如果是推断，必须写入 assumptions。
 - functional_requirements 必须描述可观察、可实现的系统行为，避免“更好”“更快”“更易用”等空泛表达，除非配有可验证标准。
 - functional_requirements、non_functional_requirements、acceptance_criteria、risks 中必须使用稳定 ID，例如 FR-001、NFR-001、AC-001、RISK-001。
@@ -94,6 +97,9 @@ Stage 1 的输出必须同时服务两类受众：
 USER_TMPL = """需求描述：{description}
 任务类型：{task_type}
 代码仓库路径：{repo_path}
+
+代码仓库 repomap 摘要（用于理解现有产品/代码边界，不能替代用户需求）：
+{repo_context_summary}
 
 用户上传的参考文档内容（如为空则表示未上传）：
 {reference_context}

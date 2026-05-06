@@ -1,0 +1,277 @@
+{
+  "version": 1,
+  "bugs": [
+    {
+      "id": "bug-001",
+      "timestamp": "2026-05-06T06:28:51.420Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/core/orchestrator.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 15→21 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T06:28:51.420Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-05-06T06:44:31.713Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/core/orchestrator.py",
+      "root_cause": "10 lines replaced/restructured",
+      "fix": "Rewrote 33→65 lines (10 removed) | Also: if override:; # Mutate via stored attribute names that pipeline ",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-06T06:45:17.353Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-05-06T06:44:53.668Z",
+      "error_message": "Missing await",
+      "file": "devflow/core/orchestrator.py",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T06:44:53.668Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-05-06T07:42:06.144Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/services/repo_map.py",
+      "root_cause": "14 lines replaced/restructured",
+      "fix": "Rewrote 44→198 lines (14 removed) | Also: symbols = []; api_routes = []",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-06T07:42:27.788Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-05-06T07:59:02.568Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/src/components/SetupView.tsx",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: ) : repoCheck.data?.exists === false ? (; <p className=\"text-[10px] text-red-400 leading-snug px-1\">",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "tsx"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-06T07:59:13.795Z"
+    },
+    {
+      "id": "bug-006",
+      "timestamp": "2026-05-06T08:08:23.785Z",
+      "error_message": "Wrong reference: _publish_git_delivery should be _apply_to_source_delivery",
+      "file": "devflow/core/orchestrator.py",
+      "root_cause": "Used \"_publish_git_delivery\" instead of \"_apply_to_source_delivery\"",
+      "fix": "Changed _publish_git_delivery → _apply_to_source_delivery",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:08:23.785Z"
+    },
+    {
+      "id": "bug-007",
+      "timestamp": "2026-05-06T08:10:15.711Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/src/hooks/useDevFlow.ts",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "ts"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:10:15.711Z"
+    },
+    {
+      "id": "bug-008",
+      "timestamp": "2026-05-06T08:10:39.877Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/src/components/ConsoleView.tsx",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 3→11 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "tsx"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:10:39.877Z"
+    },
+    {
+      "id": "bug-009",
+      "timestamp": "2026-05-06T08:10:46.095Z",
+      "error_message": "CSS fix: data",
+      "file": "frontend/src/components/ConsoleView.tsx",
+      "root_cause": "data: checkpoints = [] → sourceApp",
+      "fix": "Changed data: checkpoints = [] → sourceApp",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "tsx"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:10:46.095Z"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-05-06T08:10:58.956Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/src/components/ConsoleView.tsx",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "tsx"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:10:58.956Z"
+    },
+    {
+      "id": "bug-011",
+      "timestamp": "2026-05-06T08:32:21.247Z",
+      "error_message": "Missing error handling in _ts_extract",
+      "file": "devflow/services/repo_map.py",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:32:21.247Z"
+    },
+    {
+      "id": "bug-012",
+      "timestamp": "2026-05-06T08:33:22.120Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/services/repo_map.py",
+      "root_cause": "11 lines replaced/restructured",
+      "fix": "Rewrote 64→130 lines (11 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:33:22.120Z"
+    },
+    {
+      "id": "bug-013",
+      "timestamp": "2026-05-06T08:34:54.680Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/agents/prompts/solution_architecture.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 9→9 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:34:54.680Z"
+    },
+    {
+      "id": "bug-014",
+      "timestamp": "2026-05-06T08:39:51.666Z",
+      "error_message": "Wrong reference: tests should be YOUR_ACTUAL_TEST_FILE",
+      "file": "devflow/agents/prompts/test_generation.py",
+      "root_cause": "Used \"tests\" instead of \"YOUR_ACTUAL_TEST_FILE\"",
+      "fix": "Changed tests → YOUR_ACTUAL_TEST_FILE",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:39:51.666Z"
+    },
+    {
+      "id": "bug-015",
+      "timestamp": "2026-05-06T08:40:02.369Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/agents/prompts/test_generation.py",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 5→11 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:40:02.369Z"
+    },
+    {
+      "id": "bug-016",
+      "timestamp": "2026-05-06T08:55:07.014Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/core/orchestrator.py",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 6→13 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T08:55:07.014Z"
+    },
+    {
+      "id": "bug-017",
+      "timestamp": "2026-05-06T09:05:34.931Z",
+      "error_message": "Significant refactor of ",
+      "file": "devflow/providers/router.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 17→42 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-06T09:05:34.931Z"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ from typing import Any
 
 from devflow.agents.base import AgentContext, AgentResult, BaseAgent
 from devflow.agents.prompts import requirement_analysis as prompts
+from devflow.services.repo_map import build_repo_context_summary, compact_repo_context_for_prompt
 
 
 def _as_list(value: Any) -> list[str]:
@@ -124,10 +125,28 @@ class RequirementAnalysisAgent(BaseAgent):
         return prompts.SYSTEM
 
     def build_user_prompt(self, ctx: AgentContext) -> str:
+        repo_context = build_repo_context_summary(
+            ctx.repo_path,
+            {
+                "title": ctx.pipeline.description,
+                "summary": ctx.pipeline.description,
+                "functional_requirements": [ctx.pipeline.description],
+                "acceptance_criteria": [],
+            },
+        )
         return prompts.USER_TMPL.format(
             description=ctx.pipeline.description,
             task_type=ctx.pipeline.task_type,
             repo_path=ctx.repo_path,
+            repo_context_summary=compact_repo_context_for_prompt(
+                repo_context,
+                max_files=18,
+                max_symbols=35,
+                max_routes=20,
+                max_models=20,
+                max_test_files=10,
+                max_chars=6000,
+            ),
             reference_context=getattr(ctx.pipeline, "reference_context", "") or "未上传参考文档。",
             clarification_answers=getattr(ctx.pipeline, "clarification_answers", "") or "暂无。",
         )

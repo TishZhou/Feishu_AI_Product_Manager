@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from devflow.agents.base import AgentContext
 from devflow.agents.code_review import CodeReviewAgent
+from devflow.agents.prompts import code_review as code_review_prompts
 from devflow.config import settings
 from devflow.core.pipeline_definition import STAGE_BY_KEY
 
@@ -65,4 +66,22 @@ def test_code_review_tools_are_read_only_plus_tests():
     agent = CodeReviewAgent(STAGE_BY_KEY["code_review"])
     tool_names = [tool["function"]["name"] for tool in agent.get_tools()]
 
-    assert tool_names == ["list_dir", "read_file", "search_code", "run_test"]
+    assert tool_names == ["list_dir", "read_file", "search_code", "run_test", "run_command"]
+
+
+def test_code_review_prompt_uses_hypothesis_driven_framework():
+    prompt = code_review_prompts.SYSTEM
+
+    assert "不是 checklist" in prompt
+    assert "约 5 个" in prompt
+    assert "小范围改动只列 2-3 个" in prompt
+    assert "后续 retry 不要重新发散风险" in prompt
+    assert "不要为了凑数量" in prompt
+    assert "risk_brainstorm" in prompt
+    assert "previous_findings_check" in prompt
+    assert "verification_log" in prompt
+    assert "read_file" in prompt
+    assert "search_code" in prompt
+    assert "run_test" in prompt
+    assert "前端变更重点想" in prompt
+    assert "后端变更重点想" in prompt

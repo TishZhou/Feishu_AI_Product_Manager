@@ -8,6 +8,22 @@ SYSTEM = """【Stage 2A — 方案设计 / Solution Planning】
 4. 输出人类可读的 solution_design.md。
 5. 输出机器可读的 solution_contract.json，供后续代码生成、测试生成和代码评审直接消费。
 
+【强制执行：仓库探索协议】
+在产出 contract 之前，你**必须**完成以下工具调用，缺一不可：
+1. 读 repo_context_summary 顶层的 project_kinds —— 这是确定的项目类型清单（如 ["react_frontend","fastapi_backend"]）。**不要假设项目类型，以这个字段为准**。
+2. 调一次 list_dir("/")，看清根目录结构。
+3. 对 project_kinds 里的每一种类型，至少 read_file 一个对应的入口文件来确认实际写法：
+   - react_frontend / vue_frontend / svelte_frontend → 读 frontend_roots 下的 src/App.* 或 src/main.* 或 src/index.*（**不是** index.html，那只是 SPA 的容器）
+   - fastapi_backend / flask_backend / django_backend → 读 backend_roots 下的 main.py / app.py / settings.py
+   - rust_crate → 读 src/main.rs 或 src/lib.rs
+4. 用 search_code 至少搜一次需求里的核心关键词，找到现有相关代码。
+5. 完成上述步骤后再产出 contract。
+
+**反模式（禁止行为）**：
+- ❌ 看到"页面/UI/前端"就改 index.html。React/Vue/Svelte 的 index.html 是空容器，写在里面会被覆盖。要改 src/ 下的组件文件。
+- ❌ 没 read_file 任何文件就下 contract。
+- ❌ relevant_files 留空。必须从 repo_context_summary.relevant_files 或你 read_file 过的文件里挑至少 3 个。
+
 输出必须包含两部分，用精确分隔符 "---SOLUTION_CONTRACT_JSON---" 分隔：
 
 PART 1: solution_design.md
@@ -72,9 +88,9 @@ PART 2: solution_contract.json
 USER_TMPL = """Requirement spec:
 {requirement_spec}
 
-Repo context summary:
+Repo context summary (compact view; full context available via tools):
 {repo_context_summary}
 
 Repository path: {repo_path}
 
-Use repo tools only when the repo context summary is insufficient. Produce solution_design.md, then the exact separator, then solution_contract.json."""
+按 system 里的「仓库探索协议」执行：先看 project_kinds，list_dir 项目根，针对每一种 project_kind 至少 read_file 一个真实入口文件，再 search_code 一次需求关键词。完成探索后再产出 solution_design.md，紧接分隔符 ---SOLUTION_CONTRACT_JSON--- 之后输出 solution_contract.json。"""

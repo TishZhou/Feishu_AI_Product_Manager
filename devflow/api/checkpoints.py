@@ -48,6 +48,9 @@ async def approve_checkpoint(
     cp.decided_at = datetime.now(timezone.utc)
     await session.commit()
 
+    # Stage any provider/model switch before waking the orchestrator
+    orchestrator.set_provider_override(cp.run_id, body.next_provider, body.next_model)
+
     # Update run status and wake orchestrator
     run = await session.get(PipelineRun, cp.run_id)
     if run:
@@ -88,6 +91,7 @@ async def reject_checkpoint(
         run.status = RunState.RUNNING.value
         await session.commit()
 
+    orchestrator.set_provider_override(cp.run_id, body.next_provider, body.next_model)
     orchestrator.resolve_checkpoint(cp.run_id, cp.checkpoint_number, "rejected")
     await session.refresh(cp)
     return cp
