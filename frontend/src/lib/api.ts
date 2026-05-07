@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   Pipeline, PipelineCreate, Run, StageResult, Artifact, Checkpoint,
-  GitStatus, GitPublishOptions, GitPublishResult,
+  GitStatus, GitPublishOptions, GitPublishResult, SourceApplicationStatus,
 } from '../types/api'
 
 export const api = axios.create({
@@ -55,7 +55,7 @@ export const apiClient = {
     api.get(`/api/runs/${runId}/clarification`).then((r) => r.data),
 
   getSourceApplicationStatus: (runId: string) =>
-    api.get(`/api/runs/${runId}/source-application`).then((r) => r.data),
+    api.get<SourceApplicationStatus>(`/api/runs/${runId}/source-application`).then((r) => r.data),
 
   rollbackRun: (runId: string) =>
     api.post(`/api/runs/${runId}/rollback`).then((r) => r.data),

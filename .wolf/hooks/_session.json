@@ -28,8 +28,8 @@
       "first_read": "2026-05-06T23:42:39.113Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx": {
-      "count": 4,
-      "tokens": 6555,
+      "count": 8,
+      "tokens": 7126,
       "first_read": "2026-05-06T23:42:39.684Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ArtifactContentView.tsx": {
@@ -93,8 +93,8 @@
       "first_read": "2026-05-06T23:44:33.275Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/lib/api.ts": {
-      "count": 1,
-      "tokens": 1280,
+      "count": 2,
+      "tokens": 1657,
       "first_read": "2026-05-06T23:44:33.819Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/main.py": {
@@ -283,7 +283,7 @@
       "first_read": "2026-05-07T01:44:20.653Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/services/source_apply.py": {
-      "count": 1,
+      "count": 2,
       "tokens": 2980,
       "first_read": "2026-05-07T02:02:09.441Z"
     },
@@ -291,6 +291,11 @@
       "count": 1,
       "tokens": 0,
       "first_read": "2026-05-07T02:03:02.993Z"
+    },
+    "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/OverviewView.tsx": {
+      "count": 1,
+      "tokens": 0,
+      "first_read": "2026-05-07T02:35:41.999Z"
     }
   },
   "files_written": [
@@ -959,6 +964,84 @@
       "action": "edit",
       "tokens": 432,
       "at": "2026-05-07T02:05:14.504Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx",
+      "action": "edit",
+      "tokens": 274,
+      "at": "2026-05-07T02:35:34.656Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/lib/api.ts",
+      "action": "edit",
+      "tokens": 75,
+      "at": "2026-05-07T02:36:19.784Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/lib/api.ts",
+      "action": "edit",
+      "tokens": 51,
+      "at": "2026-05-07T02:36:22.856Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/types/api.ts",
+      "action": "edit",
+      "tokens": 60,
+      "at": "2026-05-07T02:36:24.832Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/hooks/useDevFlow.ts",
+      "action": "edit",
+      "tokens": 190,
+      "at": "2026-05-07T02:36:27.747Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/OverviewView.tsx",
+      "action": "edit",
+      "tokens": 284,
+      "at": "2026-05-07T02:36:39.296Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/OverviewView.tsx",
+      "action": "edit",
+      "tokens": 72,
+      "at": "2026-05-07T02:36:41.344Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/OverviewView.tsx",
+      "action": "edit",
+      "tokens": 372,
+      "at": "2026-05-07T02:37:00.169Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/OverviewView.tsx",
+      "action": "edit",
+      "tokens": 2163,
+      "at": "2026-05-07T02:37:49.479Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx",
+      "action": "edit",
+      "tokens": 52,
+      "at": "2026-05-07T02:39:39.629Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx",
+      "action": "edit",
+      "tokens": 268,
+      "at": "2026-05-07T02:39:52.761Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx",
+      "action": "edit",
+      "tokens": 173,
+      "at": "2026-05-07T02:40:09.833Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/lib/api.ts",
+      "action": "edit",
+      "tokens": 103,
+      "at": "2026-05-07T02:40:31.581Z"
     }
   ],
   "edit_counts": {
@@ -972,13 +1055,13 @@
     "frontend/src/lib/stageArtifacts.ts": 2,
     "frontend/src/lib/artifactLabels.ts": 2,
     "frontend/src/components/ArtifactContentView.tsx": 5,
-    "frontend/src/hooks/useDevFlow.ts": 5,
+    "frontend/src/hooks/useDevFlow.ts": 6,
     "devflow/agents/base.py": 2,
     "devflow/agents/detailed_spec.py": 3,
     "tests/test_agent_contracts.py": 3,
     "devflow/core/orchestrator.py": 13,
     "devflow/api/runs.py": 3,
-    "frontend/src/lib/api.ts": 4,
+    "frontend/src/lib/api.ts": 7,
     "frontend/src/components/DetailView.tsx": 4,
     "frontend/src/components/SetupView.tsx": 1,
     "devflow/tools/workspace.py": 4,
@@ -991,14 +1074,15 @@
     "devflow/agents/prompts/code_generation.py": 1,
     "frontend/src/components/PipelineGraph.tsx": 5,
     "devflow/services/git_integration.py": 6,
-    "frontend/src/types/api.ts": 1,
+    "frontend/src/types/api.ts": 2,
     "frontend/src/components/GitIntegrationModal.tsx": 4,
-    "frontend/src/components/ConsoleView.tsx": 6,
-    "tests/test_git_integration.py": 1
+    "frontend/src/components/ConsoleView.tsx": 10,
+    "tests/test_git_integration.py": 1,
+    "frontend/src/components/OverviewView.tsx": 4
   },
   "anatomy_hits": 21,
-  "anatomy_misses": 37,
-  "repeated_reads_warned": 17,
+  "anatomy_misses": 38,
+  "repeated_reads_warned": 23,
   "cerebrum_warnings": 0,
-  "stop_count": 15
+  "stop_count": 17
 }

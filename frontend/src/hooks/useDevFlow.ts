@@ -108,6 +108,26 @@ export function useRunTokenUsage(runId: string | null) {
   })
 }
 
+export function useSourceApplication(runId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['run', runId, 'source-application'],
+    queryFn: () => apiClient.getSourceApplicationStatus(runId!),
+    enabled: enabled && !!runId,
+    staleTime: 5_000,
+    retry: false,
+  })
+}
+
+export function useRollbackRun() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) => apiClient.rollbackRun(runId),
+    onSuccess: (_, runId) => {
+      queryClient.invalidateQueries({ queryKey: ['run', runId, 'source-application'] })
+    },
+  })
+}
+
 export function useGitStatus(runId: string | null, enabled: boolean) {
   return useQuery({
     queryKey: ['run', runId, 'git-status'],

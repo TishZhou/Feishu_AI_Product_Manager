@@ -174,6 +174,15 @@ export interface TestReport {
   }
 }
 
+export interface SourceApplicationStatus {
+  applied: boolean
+  rolled_back?: boolean
+  applied_at?: string
+  rolled_back_at?: string
+  source_repo?: string
+  files?: string[]
+}
+
 export interface GitStatus {
   is_git: boolean
   repo_path: string

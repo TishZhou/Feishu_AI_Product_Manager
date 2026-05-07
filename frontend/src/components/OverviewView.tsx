@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, CheckCircle2, FileCode2, GitBranch, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 import { STAGES } from '../types/api'
-import type { StageResult, Artifact } from '../types/api'
+import type { StageResult, Artifact, RunStatus, SourceApplicationStatus } from '../types/api'
 import { getPersona, HUE_TOKENS } from '../data/personas'
 import { apiClient } from '../lib/api'
 import { artifactLabel } from '../lib/artifactLabels'
@@ -14,6 +14,13 @@ interface OverviewViewProps {
   elapsed: number
   tokenUsage: Record<string, number>
   onShowDetail: () => void
+  // Completion callouts — shown only when run.status === 'completed'.
+  runStatus?: RunStatus
+  sourceApplication?: SourceApplicationStatus
+  onOpenGitModal?: () => void
+  onRollback?: () => void
+  rollbackPending?: boolean
+  rollbackError?: string | null
 }
 
 function formatTime(s: number) {
@@ -36,7 +43,11 @@ function formatTokens(n: number) {
   return String(n)
 }
 
-export function OverviewView({ stages, artifacts, elapsed, tokenUsage, onShowDetail }: OverviewViewProps) {
+export function OverviewView({
+  stages, artifacts, elapsed, tokenUsage, onShowDetail,
+  runStatus, sourceApplication, onOpenGitModal, onRollback, rollbackPending, rollbackError,
+}: OverviewViewProps) {
+  const isCompleted = runStatus === 'completed'
   const activeStage = useMemo(() => {
     const running = stages.find(s => s.status === 'running')
     if (running) return running
@@ -91,21 +102,34 @@ export function OverviewView({ stages, artifacts, elapsed, tokenUsage, onShowDet
       {/* Eyebrow + title */}
       <div style={{ textAlign: 'center', marginBottom: 36 }}>
         <div className="fade-up" style={{
-          fontSize: 11, color: 'var(--c-ink-400)', textTransform: 'uppercase',
-          letterSpacing: '0.14em', fontWeight: 500, marginBottom: 14, animationDelay: '0.20s',
+          fontSize: 11, color: isCompleted ? '#047857' : 'var(--c-ink-400)', textTransform: 'uppercase',
+          letterSpacing: '0.14em', fontWeight: 600, marginBottom: 14, animationDelay: '0.20s',
         }}>
-          运行中 · ACTIVE PIPELINE
+          {isCompleted ? '已完成 · DELIVERY READY' : '运行中 · ACTIVE PIPELINE'}
         </div>
         <h1 className="display fade-up" style={{
           fontSize: 32, fontWeight: 700, color: 'var(--c-ink-900)',
           lineHeight: 1.1, marginBottom: 8, animationDelay: '0.25s',
         }}>
-          您的流水线正在运行
+          {isCompleted ? '流水线已完成' : '您的流水线正在运行'}
         </h1>
         <p className="serif fade-up" style={{ fontSize: 18, color: 'var(--c-ink-500)', animationDelay: '0.30s' }}>
-          {persona.name} · {persona.role} 正在主导当前阶段
+          {isCompleted
+            ? '所有阶段执行成功，代码已经写入您的本地仓库'
+            : `${persona.name} · ${persona.role} 正在主导当前阶段`}
         </p>
       </div>
+
+      {/* Completion summary — what changed locally + git CTA */}
+      {isCompleted && (
+        <CompletionCard
+          sourceApplication={sourceApplication}
+          onOpenGitModal={onOpenGitModal}
+          onRollback={onRollback}
+          rollbackPending={rollbackPending}
+          rollbackError={rollbackError}
+        />
+      )}
 
       {/* HERO CARD */}
       <div
@@ -328,6 +352,213 @@ export function OverviewView({ stages, artifacts, elapsed, tokenUsage, onShowDet
       </div>
     </div>
   )
+}
+
+// ─── Completion card (visible after run.status = completed) ──────────────────
+
+function CompletionCard({
+  sourceApplication, onOpenGitModal, onRollback, rollbackPending, rollbackError,
+}: {
+  sourceApplication?: SourceApplicationStatus
+  onOpenGitModal?: () => void
+  onRollback?: () => void
+  rollbackPending?: boolean
+  rollbackError?: string | null
+}) {
+  const [filesExpanded, setFilesExpanded] = useState(false)
+  const [confirmingRollback, setConfirmingRollback] = useState(false)
+  const applied = sourceApplication?.applied
+  const rolledBack = sourceApplication?.rolled_back
+  const files = sourceApplication?.files ?? []
+  const filesShown = filesExpanded ? files : files.slice(0, 5)
+
+  if (!applied && !rolledBack) {
+    // No source application info yet — backend still writing or run failed.
+    return (
+      <div className="fade-up" style={{
+        padding: '14px 18px', marginBottom: 24,
+        background: 'var(--c-ink-50)', border: '1px solid var(--c-line-2)',
+        borderRadius: 12, fontSize: 13, color: 'var(--c-ink-600)',
+      }}>
+        正在等待源仓库写入状态…
+      </div>
+    )
+  }
+
+  if (rolledBack) {
+    return (
+      <div className="fade-up" style={{
+        padding: '14px 18px', marginBottom: 24,
+        background: '#FFFBEB', border: '1px solid #FDE68A',
+        borderRadius: 12, fontSize: 13, color: '#92400E',
+        display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <RotateCcw size={15} strokeWidth={2} />
+        <span>本次运行已回滚 — 源仓库已恢复到运行前的状态。</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fade-up" style={{
+      marginBottom: 28,
+      background: 'white',
+      border: '1px solid #A7F3D0',
+      borderRadius: 16, overflow: 'hidden',
+      boxShadow: '0 4px 16px rgba(16, 185, 129, 0.08), 0 0 0 4px rgba(236, 253, 245, 0.6)',
+      animationDelay: '0.32s',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '14px 20px',
+        background: 'linear-gradient(180deg, #ECFDF5, white)',
+        borderBottom: '1px solid #D1FAE5',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 9,
+          background: '#10B981', display: 'grid', placeItems: 'center',
+          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.30)',
+        }}>
+          <CheckCircle2 size={17} color="white" strokeWidth={2.4} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="display" style={{ fontSize: 14, fontWeight: 700, color: '#065F46', letterSpacing: '-0.01em' }}>
+            代码已应用到本地仓库
+          </div>
+          <div style={{ fontSize: 11.5, color: '#047857', marginTop: 2 }}>
+            {sourceApplication?.source_repo
+              ? <span className="mono">{sourceApplication.source_repo}</span>
+              : '已写入工作树'}
+            {sourceApplication?.applied_at && (
+              <span style={{ marginLeft: 8, opacity: 0.7 }}>
+                · {new Date(sourceApplication.applied_at).toLocaleString()}
+              </span>
+            )}
+          </div>
+        </div>
+        <span style={{
+          padding: '3px 9px', borderRadius: 999,
+          background: '#10B981', color: 'white',
+          fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em',
+        }}>
+          {files.length} 文件
+        </span>
+      </div>
+
+      {/* Files */}
+      {files.length > 0 && (
+        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--c-line)' }}>
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            marginBottom: 8,
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--c-ink-500)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              改动文件
+            </span>
+            {files.length > 5 && (
+              <button
+                onClick={() => setFilesExpanded(v => !v)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 11, color: 'var(--c-ink-500)', fontFamily: 'inherit',
+                  display: 'inline-flex', alignItems: 'center', gap: 3,
+                }}
+              >
+                {filesExpanded ? <>收起<ChevronUp size={11} /></> : <>展开全部 ({files.length})<ChevronDown size={11} /></>}
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {filesShown.map(f => (
+              <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileCode2 size={12} style={{ color: 'var(--c-ink-400)', flexShrink: 0 }} />
+                <span className="mono" style={{
+                  fontSize: 12, color: 'var(--c-ink-800)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {f}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{
+        padding: '12px 20px',
+        background: 'var(--c-ink-50)',
+        display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10,
+      }}>
+        {rollbackError && (
+          <span style={{ flex: 1, fontSize: 11.5, color: '#B91C1C' }}>
+            回滚失败：{rollbackError}
+          </span>
+        )}
+        {confirmingRollback ? (
+          <>
+            <span style={{ fontSize: 11.5, color: 'var(--c-ink-600)', marginRight: 6 }}>确认回滚？</span>
+            <button
+              onClick={() => setConfirmingRollback(false)}
+              disabled={rollbackPending}
+              style={ghostBtn}
+            >
+              取消
+            </button>
+            <button
+              onClick={() => { onRollback?.(); setConfirmingRollback(false) }}
+              disabled={rollbackPending}
+              style={dangerBtn}
+            >
+              {rollbackPending ? '回滚中…' : '确认回滚'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setConfirmingRollback(true)}
+              disabled={!onRollback || rollbackPending}
+              style={ghostBtn}
+            >
+              <RotateCcw size={11} style={{ marginRight: 5 }} />
+              回滚改动
+            </button>
+            <button onClick={onOpenGitModal} disabled={!onOpenGitModal} style={primaryBtn}>
+              <GitBranch size={12} style={{ marginRight: 6 }} />
+              推送到 Git
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const ghostBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center',
+  padding: '7px 12px',
+  background: 'white', border: '1px solid var(--c-line-2)',
+  borderRadius: 8, fontSize: 12, fontWeight: 500,
+  color: 'var(--c-ink-700)', cursor: 'pointer', fontFamily: 'inherit',
+}
+
+const dangerBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center',
+  padding: '7px 14px',
+  background: '#FEF2F2', border: '1px solid #FECACA',
+  borderRadius: 8, fontSize: 12, fontWeight: 600,
+  color: '#B91C1C', cursor: 'pointer', fontFamily: 'inherit',
+}
+
+const primaryBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center',
+  padding: '8px 16px',
+  background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+  border: 'none', borderRadius: 9,
+  fontSize: 12.5, fontWeight: 600, color: 'white',
+  cursor: 'pointer', fontFamily: 'inherit',
+  boxShadow: '0 4px 12px rgba(29,78,216,0.28)',
 }
 
 // ─── TOKEN stat card ──────────────────────────────────────────────────────────

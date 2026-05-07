@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T02:05:14.390Z
-> Files: 556 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T02:40:31.546Z
+> Files: 557 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -879,30 +879,31 @@
 - `ArtifactContentView.tsx` — isPatchFilename (~5446 tok)
 - `ArtifactViewer.tsx` — ArtifactViewer (~1582 tok)
 - `CheckpointModal.tsx` — PROVIDER_OPTIONS (~6394 tok)
-- `ConsoleView.tsx` — STATUS_LABEL (~7001 tok)
+- `ConsoleView.tsx` — STATUS_LABEL (~7229 tok)
 - `DetailView.tsx` — formatTimeShort (~8308 tok)
 - `GitIntegrationModal.tsx` — GitIntegrationModal (~5906 tok)
+- `OverviewView.tsx` — formatTime (~7584 tok)
 - `PipelineGraph.tsx` — formatDur (~2179 tok)
 - `SetupView.tsx` — AGENTS (~12378 tok)
 - `TestReportView.tsx` — normalizeReport (~4886 tok)
 
 ## frontend/src/hooks/
 
-- `useDevFlow.ts` — Exports useWorkspace, useCreatePipeline, useCreateRun, useRun + 9 more (~1473 tok)
+- `useDevFlow.ts` — Exports useWorkspace, useCreatePipeline, useCreateRun, useRun + 11 more (~1643 tok)
 
 ## frontend/src/lib/
 
-- `api.ts` — API routes: POST, GET (10 endpoints) (~1607 tok)
+- `api.ts` — API routes: POST, GET (9 endpoints) (~1622 tok)
 - `artifactLabels.ts` — Exports ARTIFACT_LABEL, artifactLabel (~240 tok)
 - `stageArtifacts.ts` — .md is preferred where available — those are the polished, user-facing (~538 tok)
 
 ## frontend/src/types/
 
-- `api.ts` — Exports Pipeline, PipelineCreate, Run, RunStatus + 16 more (~1392 tok)
+- `api.ts` — Exports Pipeline, PipelineCreate, Run, RunStatus + 17 more (~1443 tok)
 
 ## tests/
 
 - `test_agent_contracts.py` — test_all_agents_declare_valid_io_contracts, test_openai_reasoning_models_use_max_completion_tokens, (~842 tok)
-- `test_git_integration.py` — test_publish_run_changes_creates_branch_and_commit, test_publish_run_changes_blocks_dirty_worktree,  (~917 tok)
+- `test_git_integration.py` — test_publish_run_changes_creates_branch_and_commit, test_publish_run_changes_blocks_dirty_worktree, (~917 tok)
 - `test_orchestrator_quality_gate.py` — test_test_retry_stage_keeps_generated_test_collection_errors_in_test_generation, test_test_retry_sta (~428 tok)
 - `test_requirement_analysis_prd.py` — test_render_requirement_prd_from_spec, test_requirement_analysis_returns_prd_and_json_artifacts (~680 tok)

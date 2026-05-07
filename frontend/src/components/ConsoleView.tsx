@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Play, Pause, Square, Search, Bell, Activity, ChevronRight, LayoutDashboard, GitBranch } from 'lucide-react'
-import { useRun, useRunStages, useRunActions, useRunArtifacts, useRunCheckpoints, useRunTokenUsage, useGitStatus } from '../hooks/useDevFlow'
+import { useRun, useRunStages, useRunActions, useRunArtifacts, useRunCheckpoints, useRunTokenUsage, useGitStatus, useSourceApplication, useRollbackRun } from '../hooks/useDevFlow'
 import { PipelineGraph } from './PipelineGraph'
 import { OverviewView } from './OverviewView'
 import { DetailView } from './DetailView'
@@ -54,19 +54,27 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
     setDismissedClarificationRunId(null)
     setGitAutoShownForRun(null)
     setGitModalOpen(false)
+    // Reset the timer immediately when switching runs so the previous run's
+    // elapsed value doesn't bleed into the new run's display before the
+    // backend reports a fresh started_at.
+    setElapsed(0)
   }, [runId])
 
   // Live timer
   useEffect(() => {
-    if (run?.started_at && !run.completed_at) {
+    if (!run?.started_at) {
+      // Run not started yet (status=created) — keep the timer at 0:00:00.
+      setElapsed(0)
+      return
+    }
+    if (!run.completed_at) {
       const start = new Date(run.started_at).getTime()
-      const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000))
+      const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)))
       tick()
       const t = setInterval(tick, 1000)
       return () => clearInterval(t)
-    } else if (run?.completed_at && run?.started_at) {
-      setElapsed(Math.floor((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000))
     }
+    setElapsed(Math.max(0, Math.floor((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000)))
   }, [run?.started_at, run?.completed_at])
 
   // ESC closes detail/canvas back to overview
@@ -92,10 +100,11 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
 
   const handleStageClick = (key: string) => { setSelectedStageKey(key); showDetail() }
 
-  // Pre-fetch git status once the run completes — drives the auto-show modal
-  // and the header pill. Disabled while the run is still running so we don't
-  // spam the endpoint mid-pipeline.
+  // Pre-fetch git + source-application status once the run completes — drives
+  // the auto-show modal, the header pill, and the OverviewView completion card.
   const { data: gitStatus } = useGitStatus(runId, run?.status === 'completed')
+  const { data: sourceApplication } = useSourceApplication(runId, run?.status === 'completed')
+  const rollback = useRollbackRun()
 
   // Auto-open the git integration modal the first time a completed run is
   // viewed AND we have a git repo with no prior publication. The user can
@@ -482,6 +491,12 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
             <OverviewView
               stages={stages} artifacts={artifacts} elapsed={elapsed}
               tokenUsage={tokenUsage} onShowDetail={showDetail}
+              runStatus={run.status}
+              sourceApplication={sourceApplication}
+              onOpenGitModal={() => setGitModalOpen(true)}
+              onRollback={() => rollback.mutate(runId)}
+              rollbackPending={rollback.isPending}
+              rollbackError={rollback.isError ? (rollback.error as Error)?.message || '请检查后端日志' : null}
             />
           )}
         </div>

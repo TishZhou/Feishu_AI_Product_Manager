@@ -8,7 +8,8 @@
       "Bash(python -m pytest -x -q)",
       "Bash(python -c \"from devflow.api.runs import router; print\\('OK'\\)\")",
       "Bash(python -c \"from devflow.services.git_integration import publish_run_changes, inspect_repo, _porcelain_paths; print\\('OK'\\); print\\(_porcelain_paths\\(' M frontend/src/App.tsx\\\\n?? new.txt'\\)\\)\")",
-      "Bash(python -m pytest tests/test_git_integration.py -x -q)"
+      "Bash(python -m pytest tests/test_git_integration.py -x -q)",
+      "Bash(git commit -m ' *)"
     ]
   },
   "hooks": {
