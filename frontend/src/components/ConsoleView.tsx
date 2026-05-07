@@ -60,22 +60,30 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
     setElapsed(0)
   }, [runId])
 
-  // Live timer
+  // Live timer — always tick once a second, recompute elapsed from the latest
+  // run.started_at / completed_at every tick. This avoids fragile state-machine
+  // bugs (e.g. effect not re-running when started_at flips from null to a
+  // string) and always reflects the truth on screen.
+  const startedAt = run?.started_at ?? null
+  const completedAt = run?.completed_at ?? null
   useEffect(() => {
-    if (!run?.started_at) {
-      // Run not started yet (status=created) — keep the timer at 0:00:00.
-      setElapsed(0)
-      return
+    const tick = () => {
+      if (!startedAt) {
+        setElapsed(0)
+        return
+      }
+      const start = new Date(startedAt).getTime()
+      const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+      const seconds = Math.max(0, Math.floor((end - start) / 1000))
+      setElapsed(seconds)
     }
-    if (!run.completed_at) {
-      const start = new Date(run.started_at).getTime()
-      const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)))
-      tick()
-      const t = setInterval(tick, 1000)
-      return () => clearInterval(t)
-    }
-    setElapsed(Math.max(0, Math.floor((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000)))
-  }, [run?.started_at, run?.completed_at])
+    tick()
+    // Stop ticking once the run is in a terminal state — elapsed becomes a
+    // fixed value (completed_at - started_at) and doesn't need refreshing.
+    if (completedAt) return
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [startedAt, completedAt])
 
   // ESC closes detail/canvas back to overview
   useEffect(() => {
