@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, CheckCircle2, FileCode2, GitBranch, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 import { STAGES } from '../types/api'
 import type { StageResult, Artifact, RunStatus, SourceApplicationStatus } from '../types/api'
@@ -43,11 +43,35 @@ function formatTokens(n: number) {
   return String(n)
 }
 
+const TERMINAL_RUN_STATUSES: RunStatus[] = ['completed', 'failed', 'terminated']
+
+function useLiveOverviewElapsed(elapsed: number, runStatus?: RunStatus) {
+  const [displayElapsed, setDisplayElapsed] = useState(elapsed)
+  const sourceElapsedRef = useRef(elapsed)
+  const isTerminal = runStatus ? TERMINAL_RUN_STATUSES.includes(runStatus) : false
+
+  useEffect(() => {
+    sourceElapsedRef.current = elapsed
+    setDisplayElapsed(prev => isTerminal ? elapsed : Math.max(prev, elapsed))
+  }, [elapsed, isTerminal])
+
+  useEffect(() => {
+    if (isTerminal) return
+    const t = setInterval(() => {
+      setDisplayElapsed(prev => Math.max(prev + 1, sourceElapsedRef.current))
+    }, 1000)
+    return () => clearInterval(t)
+  }, [isTerminal])
+
+  return displayElapsed
+}
+
 export function OverviewView({
   stages, artifacts, elapsed, tokenUsage, onShowDetail,
   runStatus, sourceApplication, onOpenGitModal, onRollback, rollbackPending, rollbackError,
 }: OverviewViewProps) {
   const isCompleted = runStatus === 'completed'
+  const displayElapsed = useLiveOverviewElapsed(elapsed, runStatus)
   const activeStage = useMemo(() => {
     const running = stages.find(s => s.status === 'running')
     if (running) return running
@@ -216,7 +240,7 @@ export function OverviewView({
               fontSize: 38, fontWeight: 600, color: 'white',
               letterSpacing: '-0.02em', lineHeight: 1, fontFeatureSettings: '"tnum"',
             }}>
-              {formatTime(elapsed)}
+              {formatTime(displayElapsed)}
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onShowDetail() }}
@@ -279,7 +303,7 @@ export function OverviewView({
         gap: 12, marginBottom: 28, animationDelay: '0.45s',
       }}>
         <StatCard label="已完成阶段" value={`${succeededCount}`} unit={`/ ${STAGES.length}`} trend={persona.role} trendUp />
-        <StatCard label="运行时长" value={formatTimeShort(elapsed)} unit="" trend="持续递增" />
+        <StatCard label="运行时长" value={formatTimeShort(displayElapsed)} unit="" trend="持续递增" />
         <StatCard label="已生成产物" value={`${artifacts.length}`} unit="个" trend={`${(artifacts.reduce((s, a) => s + a.size_bytes, 0) / 1024).toFixed(1)} KB`} />
         <TokenStatCard tokenStr={tokenStr} providerLabel={providerLabel} />
       </div>

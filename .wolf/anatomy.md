@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T03:04:34.547Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T20:25:43.485Z
 > Files: 557 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -12,7 +12,7 @@
 - `greet.py` — greet (~16 tok)
 - `LICENSE` — Project license (~284 tok)
 - `pyproject.toml` — Python project configuration (~256 tok)
-- `README.md` — Project documentation (~2509 tok)
+- `README.md` — Project documentation (~5954 tok)
 - `requirements.txt` — Python dependencies (~79 tok)
 - `streamlit_app.py` — URL configuration (~6962 tok)
 
@@ -872,7 +872,7 @@
 ## devflow/tools/
 
 - `command_runner.py` — Safe project validation commands exposed to coding agents. (~1964 tok)
-- `workspace.py` — Isolated workspace creation — git worktree with shutil.copytree fallback. (~2280 tok)
+- `workspace.py` — Isolated workspace creation — git worktree with shutil.copytree fallback. (~2563 tok)
 
 ## frontend/src/components/
 

@@ -1,11 +1,13 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from devflow.core.state_machine import RunState
 from devflow.db.engine import get_session
 from devflow.db.models import Pipeline, PipelineRun
 from devflow.schemas.pipeline import PipelineCreate, PipelineRead
@@ -80,8 +82,9 @@ async def create_run(pipeline_id: str, session: AsyncSession = Depends(get_sessi
         id=str(uuid.uuid4()),
         pipeline_id=pipeline_id,
         run_number=run_number,
-        status="created",
+        status=RunState.RUNNING.value,
         current_stage="",
+        started_at=datetime.now(timezone.utc),
     )
     session.add(run)
     await session.commit()

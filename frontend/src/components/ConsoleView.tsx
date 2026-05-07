@@ -33,6 +33,17 @@ function formatTime(s: number) {
   return `${pad(h)}:${pad(m)}:${pad(sec)}`
 }
 
+function parseBackendTime(value: string | null | undefined) {
+  if (!value) return NaN
+  // SQLite stores UTC datetimes without an offset, and FastAPI serializes them
+  // as ISO strings without "Z". Browsers parse those as local time, which can
+  // put the run start in the future and clamp elapsed to 0. Treat offset-less
+  // backend timestamps as UTC.
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+  const normalized = hasZone ? value : `${value.replace(' ', 'T')}Z`
+  return new Date(normalized).getTime()
+}
+
 export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
   const { data: run } = useRun(runId)
   const { data: stages = [] } = useRunStages(runId)
@@ -67,23 +78,45 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
   const startedAt = run?.started_at ?? null
   const completedAt = run?.completed_at ?? null
   useEffect(() => {
+    const fallbackStartedAt = (() => {
+      const stageStarts = stages
+        .map(s => s.started_at)
+        .filter((value): value is string => Boolean(value))
+        .sort()
+      return stageStarts[0] ?? run?.created_at ?? null
+    })()
+    const fallbackCompletedAt = (() => {
+      if (!run || !['completed', 'failed', 'terminated'].includes(run.status)) return null
+      const stageEnds = stages
+        .map(s => s.completed_at)
+        .filter((value): value is string => Boolean(value))
+        .sort()
+      return stageEnds[stageEnds.length - 1] ?? null
+    })()
+    const effectiveStartedAt = startedAt ?? fallbackStartedAt
+    const effectiveCompletedAt = completedAt ?? fallbackCompletedAt
+
     const tick = () => {
-      if (!startedAt) {
+      if (!effectiveStartedAt) {
         setElapsed(0)
         return
       }
-      const start = new Date(startedAt).getTime()
-      const end = completedAt ? new Date(completedAt).getTime() : Date.now()
+      const start = parseBackendTime(effectiveStartedAt)
+      const end = effectiveCompletedAt ? parseBackendTime(effectiveCompletedAt) : Date.now()
+      if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        setElapsed(0)
+        return
+      }
       const seconds = Math.max(0, Math.floor((end - start) / 1000))
       setElapsed(seconds)
     }
     tick()
     // Stop ticking once the run is in a terminal state — elapsed becomes a
     // fixed value (completed_at - started_at) and doesn't need refreshing.
-    if (completedAt) return
+    if (effectiveCompletedAt) return
     const t = setInterval(tick, 1000)
     return () => clearInterval(t)
-  }, [startedAt, completedAt])
+  }, [startedAt, completedAt, run, stages])
 
   // ESC closes detail/canvas back to overview
   useEffect(() => {
@@ -497,6 +530,7 @@ export function ConsoleView({ runId, onBack }: ConsoleViewProps) {
         }}>
           {(!hasTransitioned || view === 'overview') && (
             <OverviewView
+              key={runId}
               stages={stages} artifacts={artifacts} elapsed={elapsed}
               tokenUsage={tokenUsage} onShowDetail={showDetail}
               runStatus={run.status}
