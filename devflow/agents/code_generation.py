@@ -12,7 +12,7 @@ from devflow.tools.command_runner import COMMAND_TOOL_SCHEMAS, run_command
 from devflow.tools.repo_tools import REPO_TOOL_SCHEMAS
 from devflow.tools.repo_tools import edit_file, list_dir, read_file, search_code, write_file
 from devflow.tools.test_runner import TEST_TOOL_SCHEMAS, run_test
-from devflow.tools.workspace import create_workspace
+from devflow.tools.workspace import create_workspace, ensure_frontend_node_modules
 
 _SEPARATOR = "---IMPLEMENTATION_SUMMARY---"
 _IGNORE_DIRS = {
@@ -48,6 +48,9 @@ class CodeGenerationAgent(BaseAgent):
         if workspace.exists():
             shutil.rmtree(workspace)
         create_workspace(source_repo, workspace)
+        # Symlink source node_modules so the agent can run `npx --no-install tsc`
+        # to verify frontend changes without paying for `npm install`.
+        ensure_frontend_node_modules(workspace, source_repo)
 
         dispatcher = ToolDispatcher()
         workspace_str = str(workspace)
@@ -70,6 +73,8 @@ class CodeGenerationAgent(BaseAgent):
             max_tokens=self.max_tokens(),
             max_tool_rounds=30,
             cache_key=f"devflow:{ctx.stage_key}",
+            run_id=ctx.run_id,
+            stage_key=ctx.stage_key,
         )
 
         patch = _build_workspace_patch(source_repo, workspace)

@@ -20,13 +20,18 @@ class ProviderRouter:
                     api_key=settings.OPENAI_API_KEY,
                     base_url=settings.OPENAI_BASE_URL,
                 )
+            elif provider == "gemini":
+                self._clients["gemini"] = AsyncOpenAI(
+                    api_key=settings.GEMINI_API_KEY,
+                    base_url=settings.GEMINI_BASE_URL,
+                )
             elif provider == "volcano":
                 self._clients["volcano"] = AsyncOpenAI(
                     api_key=settings.VOLCANO_API_KEY,
                     base_url=settings.VOLCANO_BASE_URL,
                 )
             else:
-                raise ValueError(f"Unknown provider: {provider!r}. Supported: openai, volcano")
+                raise ValueError(f"Unknown provider: {provider!r}. Supported: openai, gemini, volcano")
         return self._clients[provider]
 
     def resolve_model(self, provider: str, model: str | None) -> str:
@@ -34,6 +39,8 @@ class ProviderRouter:
             return model
         if provider == "openai":
             return settings.OPENAI_DEFAULT_MODEL
+        if provider == "gemini":
+            return settings.GEMINI_DEFAULT_MODEL
         if provider == "volcano":
             return settings.VOLCANO_DEFAULT_MODEL
         return ""
@@ -50,6 +57,8 @@ class ProviderRouter:
         max_tokens: int | None = None,
         max_tool_rounds: int = 25,
         cache_key: str | None = None,
+        run_id: str | None = None,
+        stage_key: str = "",
     ) -> str:
         provider = provider or settings.DEFAULT_PROVIDER
         client = self.get_client(provider)
@@ -67,7 +76,7 @@ class ProviderRouter:
         if json_mode and provider != "volcano":
             kwargs["response_format"] = {"type": "json_object"}
         if max_tokens:
-            kwargs["max_tokens"] = max_tokens
+            kwargs[_max_tokens_param(provider, resolved_model)] = max_tokens
 
         # OpenAI prompt caching: passing a stable cache_key groups calls for the
         # provider-side cache router. Caching itself is automatic once the prompt
@@ -87,7 +96,7 @@ class ProviderRouter:
 
         # Agentic tool-use loop — capped at max_tool_rounds to prevent runaway calls
         for round_num in range(max(1, max_tool_rounds)):
-            response = await client.chat.completions.create(**kwargs, timeout=180)
+            response = await _create_chat_completion(client, kwargs, timeout=180)
             choice = response.choices[0]
             self._log_cache_usage(response, provider, round_num + 1)
 
@@ -97,7 +106,18 @@ class ProviderRouter:
                 messages.append(choice.message.model_dump())
                 for tc in choice.message.tool_calls:
                     fn_name = tc.function.name
-                    fn_args = json.loads(tc.function.arguments)
+                    try:
+                        fn_args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError as exc:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps({
+                                "error": f"Invalid tool arguments JSON for {fn_name}: {exc}",
+                                "raw_arguments": tc.function.arguments,
+                            }, ensure_ascii=False),
+                        })
+                        continue
                     # Log args (truncated)
                     args_preview = ", ".join(f"{k}={repr(v)[:60]}" for k, v in fn_args.items())
                     logger.info("[TOOL] ▶ %s(%s)", fn_name, args_preview)
@@ -116,6 +136,12 @@ class ProviderRouter:
             tokens = getattr(response.usage, "completion_tokens", "?")
             elapsed = _time.monotonic() - t0
             logger.info("[LLM] ✓ done  finish=%s  tokens=%s  %.1fs", choice.finish_reason, tokens, elapsed)
+            if run_id and stage_key and isinstance(tokens, int):
+                try:
+                    from devflow.services.token_usage import token_usage_store
+                    token_usage_store.add(run_id, stage_key, tokens)
+                except Exception:
+                    logger.debug("token usage tracking failed", exc_info=True)
             return choice.message.content or ""
 
         # Force a final text response after tool rounds are exhausted
@@ -124,8 +150,15 @@ class ProviderRouter:
         kwargs["messages"] = messages
         kwargs.pop("tools", None)
         kwargs.pop("tool_choice", None)
-        final = await client.chat.completions.create(**kwargs, timeout=180)
+        final = await _create_chat_completion(client, kwargs, timeout=180)
         self._log_cache_usage(final, provider, max_tool_rounds + 1)
+        tokens = getattr(final.usage, "completion_tokens", None)
+        if run_id and stage_key and isinstance(tokens, int):
+            try:
+                from devflow.services.token_usage import token_usage_store
+                token_usage_store.add(run_id, stage_key, tokens)
+            except Exception:
+                logger.debug("token usage tracking failed", exc_info=True)
         return final.choices[0].message.content or ""
 
     def _log_cache_usage(self, response: Any, provider: str, round_num: int) -> None:
@@ -154,10 +187,13 @@ class ProviderRouter:
             client = self.get_client(provider)
             model = self.resolve_model(provider, None)
             # Minimal ping: list models or do a tiny completion
-            resp = await client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "ping"}],
-                max_tokens=1,
+            resp = await _create_chat_completion(
+                client,
+                {
+                    "model": model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    _max_tokens_param(provider, model): 1,
+                },
             )
             return {"provider": provider, "status": "ok", "model": model}
         except Exception as e:
@@ -206,6 +242,33 @@ def _filter_kwargs_for(fn: Any, args: dict) -> dict:
     if accepts_var_kw:
         return args
     return {k: v for k, v in args.items() if k in accepted}
+
+
+def _max_tokens_param(provider: str, model: str) -> str:
+    """OpenAI reasoning-era chat models reject the legacy max_tokens parameter."""
+    normalized = model.lower()
+    if provider == "openai" and (normalized.startswith("gpt-5") or normalized.startswith("o")):
+        return "max_completion_tokens"
+    return "max_tokens"
+
+
+async def _create_chat_completion(client: AsyncOpenAI, kwargs: dict[str, Any], timeout: int = 180) -> Any:
+    try:
+        return await client.chat.completions.create(**kwargs, timeout=timeout)
+    except Exception as exc:
+        message = str(exc)
+        unsupported = "Unsupported parameter: '"
+        if unsupported not in message:
+            raise
+        param = message.split(unsupported, 1)[1].split("'", 1)[0]
+        if param == "max_tokens" and "max_tokens" in kwargs:
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        elif param in kwargs:
+            kwargs.pop(param, None)
+        else:
+            raise
+        logger.warning("[LLM] retrying without unsupported parameter: %s", param)
+        return await client.chat.completions.create(**kwargs, timeout=timeout)
 
 
 # Singleton used across the app

@@ -8,6 +8,47 @@ from pathlib import Path
 from typing import Any
 
 
+def inspect_repo(repo_path: str) -> dict[str, Any]:
+    """Lightweight precheck for the git integration modal: is this a git repo?
+    Has a remote? Is the working tree clean? What's the current branch?"""
+    info: dict[str, Any] = {
+        "is_git": False, "repo_path": str(Path(repo_path).resolve()),
+        "current_branch": "", "remote_url": "", "remote_kind": "",
+        "working_tree_clean": False, "has_gh_cli": False, "has_glab_cli": False,
+        "error": "",
+    }
+    repo = Path(repo_path).resolve()
+    if not repo.exists():
+        info["error"] = f"Repo path does not exist: {repo}"
+        return info
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=repo, capture_output=True, text=True)
+    if top.returncode != 0:
+        info["error"] = "Not a git repository"
+        return info
+    info["is_git"] = True
+    info["repo_path"] = top.stdout.strip()
+
+    branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=info["repo_path"], capture_output=True, text=True)
+    if branch.returncode == 0:
+        info["current_branch"] = branch.stdout.strip()
+
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=info["repo_path"], capture_output=True, text=True)
+    if status.returncode == 0:
+        info["working_tree_clean"] = not status.stdout.strip()
+
+    remote = subprocess.run(["git", "remote", "get-url", "origin"], cwd=info["repo_path"], capture_output=True, text=True)
+    if remote.returncode == 0 and remote.stdout.strip():
+        info["remote_url"] = remote.stdout.strip()
+        if "github" in info["remote_url"]:
+            info["remote_kind"] = "github"
+        elif "gitlab" in info["remote_url"]:
+            info["remote_kind"] = "gitlab"
+
+    info["has_gh_cli"] = bool(shutil.which("gh"))
+    info["has_glab_cli"] = bool(shutil.which("glab"))
+    return info
+
+
 def publish_run_changes(
     repo_path: str,
     patch_text: str,
@@ -15,7 +56,14 @@ def publish_run_changes(
     title: str,
     body: str = "",
     branch_prefix: str = "devflow",
+    do_push: bool = True,
+    do_pr: bool = True,
 ) -> dict[str, Any]:
+    """Create a branch, commit the patch, optionally push, optionally open PR/MR.
+
+    The granular ``do_push`` / ``do_pr`` flags let the UI offer "commit only",
+    "commit + push", and "commit + push + open PR" levels.
+    """
     repo = Path(repo_path).resolve()
     result: dict[str, Any] = {
         "status": "pending",
@@ -48,10 +96,29 @@ def publish_run_changes(
     if status.returncode != 0:
         result.update({"status": "failed", "error": _stderr(status)})
         return result
-    if status.stdout.strip():
+
+    # Two scenarios produce a "dirty" working tree at this point:
+    # 1. User has unrelated local changes — refuse to mix them in.
+    # 2. The orchestrator's apply_to_source already wrote our patch into the
+    #    working tree as part of delivery. In that case the dirty files exactly
+    #    match the patch's changed files; we should commit them on a new branch
+    #    rather than re-applying the patch on top.
+    expected_paths = set(_changed_paths_from_patch(patch_text))
+    dirty_paths = _porcelain_paths(status.stdout)
+    # A non-empty dirty set whose contents are all expected = the patch was
+    # already materialised by apply_to_source. Empty dirty set falls through
+    # to the normal apply path.
+    patch_already_applied = (
+        bool(expected_paths) and bool(dirty_paths) and dirty_paths.issubset(expected_paths)
+    )
+
+    if status.stdout.strip() and not patch_already_applied:
         result.update({
             "status": "blocked",
-            "error": "Working tree is not clean; refusing to mix existing changes into an automated commit.",
+            "error": (
+                "Working tree has changes that don't match the run's patch. "
+                "Please commit/stash them before publishing."
+            ),
             "working_tree_status": status.stdout.strip(),
         })
         return result
@@ -69,10 +136,15 @@ def publish_run_changes(
         result.update({"status": "failed", "error": _stderr(checkout)})
         return result
 
-    apply_result = _apply_patch(repo, patch_text, result)
-    if apply_result.returncode != 0:
-        result.update({"status": "failed", "error": _stderr(apply_result) or "git apply failed"})
-        return result
+    if patch_already_applied:
+        # Files were materialised by apply_to_source — they came along onto the
+        # new branch with `git checkout -b`. Skip the apply step and stage them.
+        result["steps"].append({"cmd": "skip git apply (working tree already matches patch)", "returncode": 0, "stdout": "", "stderr": ""})
+    else:
+        apply_result = _apply_patch(repo, patch_text, result)
+        if apply_result.returncode != 0:
+            result.update({"status": "failed", "error": _stderr(apply_result) or "git apply failed"})
+            return result
 
     changed_paths = _changed_paths_from_patch(patch_text)
     result["changed_files"] = changed_paths
@@ -108,6 +180,9 @@ def publish_run_changes(
         result["commit"] = head.stdout.strip()
     result["status"] = "committed"
 
+    if not do_push:
+        return result  # Caller asked for local-only commit.
+
     remote = _git(repo, ["remote", "get-url", "origin"], result)
     if remote.returncode != 0 or not remote.stdout.strip():
         result["error"] = "No origin remote configured; branch was committed locally."
@@ -120,6 +195,9 @@ def publish_run_changes(
         return result
     result["pushed"] = True
     result["status"] = "pushed"
+
+    if not do_pr:
+        return result
 
     review = _create_review(repo, branch, title, body, result)
     if review:
@@ -203,6 +281,25 @@ def _run_cli(repo: Path, args: list[str], result: dict[str, Any], label: str) ->
         "stderr": completed.stderr[-2000:],
     })
     return completed
+
+
+def _porcelain_paths(porcelain_output: str) -> set[str]:
+    """Extract changed file paths from `git status --porcelain` output.
+
+    Each line is ``XY path`` or ``XY path -> newpath`` for renames. We collect
+    both source and destination so the comparison against the patch's changed
+    paths catches renames cleanly.
+    """
+    paths: set[str] = set()
+    for raw in porcelain_output.splitlines():
+        if len(raw) < 4:
+            continue
+        rest = raw[3:]
+        for chunk in rest.split(" -> "):
+            chunk = chunk.strip().strip('"')
+            if chunk:
+                paths.add(chunk)
+    return paths
 
 
 def _changed_paths_from_patch(patch_text: str) -> list[str]:

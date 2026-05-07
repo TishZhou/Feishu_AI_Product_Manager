@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +59,89 @@ async def rollback_run(run_id: str, session: AsyncSession = Depends(get_session)
     return result
 
 
+@router.get("/runs/{run_id}/git-status")
+async def get_git_status(run_id: str, session: AsyncSession = Depends(get_session)):
+    """Inspect the source repo so the git modal knows what options to enable."""
+    from devflow.db.models import Pipeline as PipelineModel
+    from devflow.services.git_integration import inspect_repo
+
+    run = await _get_run_or_404(run_id, session)
+    pipeline = await session.get(PipelineModel, run.pipeline_id)
+    if not pipeline:
+        raise HTTPException(404, "Pipeline not found")
+
+    info = inspect_repo(pipeline.repo_path)
+    # Merge in publication state so the UI knows whether we've already pushed.
+    pub_path = _artifacts_dir_for(run_id) / "git_publication.json"
+    info["already_published"] = pub_path.exists()
+    if pub_path.exists():
+        try:
+            info["last_publication"] = json.loads(pub_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            info["last_publication"] = None
+    return info
+
+
+class GitPublishRequest(BaseModel):
+    do_push: bool = True
+    do_pr: bool = True
+    branch_prefix: str = "devflow"
+    title: str = ""
+    body: str = ""
+
+
+@router.post("/runs/{run_id}/git-publish")
+async def publish_run_git(
+    run_id: str,
+    body: GitPublishRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a branch + commit (+ optional push + optional PR/MR) for this run's
+    final patch. Idempotent in the sense that repeated calls just create new
+    branches; the user can rerun with different options if the first attempt
+    failed (e.g. credentials missing for ``gh pr create``)."""
+    from devflow.db.models import Pipeline as PipelineModel
+    from devflow.services.git_integration import publish_run_changes
+
+    run = await _get_run_or_404(run_id, session)
+    pipeline = await session.get(PipelineModel, run.pipeline_id)
+    if not pipeline:
+        raise HTTPException(404, "Pipeline not found")
+
+    # Final patch lives at artifacts/<run_id>/final_diff.patch (delivery output)
+    artifacts_dir = _artifacts_dir_for(run_id)
+    patch_path = artifacts_dir / "final_diff.patch"
+    if not patch_path.exists():
+        # Fall back to the raw code_diff.patch when delivery hasn't run yet.
+        patch_path = artifacts_dir / "code_diff.patch"
+    if not patch_path.exists():
+        raise HTTPException(400, "No final_diff.patch / code_diff.patch artifact found for this run.")
+    patch_text = patch_path.read_text(encoding="utf-8", errors="replace")
+
+    title = (body.title or pipeline.description or f"DevFlow run {run_id[:8]}").strip().splitlines()[0]
+    description = body.body or pipeline.description or ""
+
+    result = publish_run_changes(
+        repo_path=pipeline.repo_path,
+        patch_text=patch_text,
+        run_id=run_id,
+        title=title,
+        body=description,
+        branch_prefix=body.branch_prefix or "devflow",
+        do_push=body.do_push,
+        do_pr=body.do_pr,
+    )
+    # Persist the result so the UI can show it after refresh / reopen.
+    try:
+        (artifacts_dir / "git_publication.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    return result
+
+
 @router.get("/runs/{run_id}/stages", response_model=list[StageResultRead])
 async def get_run_stages(run_id: str, session: AsyncSession = Depends(get_session)):
     await _get_run_or_404(run_id, session)
@@ -98,6 +182,60 @@ async def terminate_run(run_id: str, session: AsyncSession = Depends(get_session
     run.status = RunState.TERMINATED.value
     await session.commit()
     return {"run_id": run_id, "status": "terminated"}
+
+
+@router.post("/runs/{run_id}/retry")
+async def retry_run_from_stage(
+    run_id: str,
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+):
+    """Re-run the pipeline starting from a specific stage, reusing prior artifacts.
+
+    Body: {"stage_key": "<stage_key>"}
+    """
+    from sqlalchemy import update
+    from devflow.core.pipeline_definition import STAGE_BY_KEY, STAGE_REGISTRY
+    from devflow.core.state_machine import StageState
+    from devflow.db.models import StageResult
+
+    stage_key = (body or {}).get("stage_key", "").strip()
+    if not stage_key or stage_key not in STAGE_BY_KEY:
+        raise HTTPException(400, f"Unknown stage_key: {stage_key!r}")
+
+    run = await _get_run_or_404(run_id, session)
+    if task_manager.is_running(run_id):
+        raise HTTPException(409, "Run is currently active. Terminate it before retrying.")
+    terminal = {RunState.COMPLETED.value, RunState.FAILED.value, RunState.TERMINATED.value}
+    if run.status not in terminal:
+        raise HTTPException(
+            400,
+            f"Run must be in a terminal state to retry (current: {run.status}). "
+            "Terminate the run first.",
+        )
+
+    # Mark stages from the retry point onwards as rejected so the orchestrator's
+    # next-attempt counter starts cleanly and the UI shows them as "to redo".
+    start_index = STAGE_BY_KEY[stage_key].index
+    keys_to_reject = {s.key for s in STAGE_REGISTRY if s.index >= start_index}
+    await session.execute(
+        update(StageResult)
+        .where(StageResult.run_id == run_id, StageResult.stage_key.in_(keys_to_reject))
+        .values(status=StageState.REJECTED.value)
+    )
+
+    run.status = RunState.RUNNING.value
+    run.error_message = ""
+    run.completed_at = None
+    run.current_stage = stage_key
+    await session.commit()
+
+    orchestrator.register_run(run_id)
+    task_manager.spawn(
+        run_id,
+        orchestrator.run_pipeline(run_id, resume_from_stage=stage_key),
+    )
+    return {"run_id": run_id, "status": "running", "resumed_from": stage_key}
 
 
 @router.post("/runs/{run_id}/clarifications")
@@ -266,6 +404,13 @@ async def get_run_test_progress(run_id: str, session: AsyncSession = Depends(get
         if isinstance(report, dict):
             return progress_from_report(run_id, report)
     return progress
+
+
+@router.get("/runs/{run_id}/token-usage")
+async def get_run_token_usage(run_id: str, session: AsyncSession = Depends(get_session)):
+    await _get_run_or_404(run_id, session)
+    from devflow.services.token_usage import token_usage_store
+    return token_usage_store.get(run_id)
 
 
 def _sse_payload(stage_key: str, message: str, level: str = "info") -> str:

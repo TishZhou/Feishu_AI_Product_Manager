@@ -83,7 +83,7 @@ export function TestProgressWindow({ runId, stages }: TestProgressWindowProps) {
   const skipped = asNumber(progress?.skipped) || cases.filter(test => test.status === 'skipped').length
   const status = progress?.status ?? (testStage?.status === 'running' ? 'running' : 'idle')
   const tone = statusTone(status === 'passed' && failed === 0 ? 'passed' : status === 'failed' || failed > 0 ? 'failed' : 'running')
-  const events = progress?.events ?? []
+  const events = (progress?.events ?? []) as NonNullable<TestProgress['events']>
 
   if (!shouldRender) return null
 
@@ -170,7 +170,7 @@ export function TestProgressWindow({ runId, stages }: TestProgressWindowProps) {
 
           {(progress?.test_files?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-2">
-              {progress?.test_files.map(file => (
+              {progress?.test_files.map((file: string) => (
                 <div key={file} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,255,255,0.045)', color: 'rgba(255,255,255,0.52)', border: '1px solid rgba(255,255,255,0.07)' }}>
                   <FileCode2 className="w-3 h-3" />
                   {file}

@@ -4,8 +4,6 @@ export interface Pipeline {
   description: string
   task_type: string
   repo_path: string
-  reference_context: string
-  reference_sources: string
   provider: string
   model: string
   created_at: string
@@ -16,57 +14,11 @@ export interface PipelineCreate {
   description: string
   task_type?: string
   repo_path: string
-  reference_context?: string
-  reference_sources?: string
   provider?: string
   model?: string
+  reference_context?: string
+  reference_sources?: string
   confirm_self_modification?: boolean
-}
-
-export interface RepoCheck {
-  path: string
-  exists: boolean
-  is_directory?: boolean
-  is_self_repo?: boolean
-  is_git_repo?: boolean
-  source_root?: string
-}
-
-export interface SourceApplicationStatus {
-  applied: boolean
-  rolled_back: boolean
-  applied_at?: string
-  rolled_back_at?: string
-  source_repo?: string
-  files?: string[]
-}
-
-export interface RollbackResult {
-  status: 'rolled_back' | 'already_rolled_back' | 'not_found' | 'failed' | string
-  run_id: string
-  restored_files?: string[]
-  removed_files?: string[]
-  error?: string
-}
-
-export interface ReferenceDocumentContext {
-  reference_context: string
-  reference_sources: string
-}
-
-export interface ClarificationSubmit {
-  answered_by?: string
-  answers: string
-}
-
-export interface ClarificationPayload {
-  title?: string
-  summary?: string
-  open_questions?: unknown[]
-  missing_critical_info?: unknown[]
-  ambiguities?: unknown[]
-  confidence_score?: number | string | null
-  instruction?: string
 }
 
 export interface Run {
@@ -140,58 +92,36 @@ export interface Checkpoint {
   created_at: string
 }
 
-export interface CodeReviewFile {
-  path: string
-  action: 'create' | 'modify' | 'delete' | string
-  diff: string
-  additions: number
-  deletions: number
-  generated_file: string
-  generated_exists: boolean
-  generated_content: string
-}
+export const STAGES = [
+  { key: 'requirement_analysis',  label: '需求分析', index: 1 },
+  { key: 'solution_architecture', label: '架构设计', index: 2 },
+  { key: 'detailed_spec',         label: '详细规格', index: 3 },
+  { key: 'code_generation',       label: '代码生成', index: 4 },
+  { key: 'test_generation',       label: '测试生成', index: 5 },
+  { key: 'code_review',           label: '代码审查', index: 6 },
+  { key: 'delivery',              label: '交付打包', index: 7 },
+] as const
 
-export interface CodeReviewFilesPayload {
-  mode: string
-  applied_to_repo: boolean
-  patch_applied_to_workspace: boolean
-  workspace_apply_error: string
-  execution_workspace: string
-  source_artifacts?: Record<string, string>
-  file_count: number
-  files: CodeReviewFile[]
+export const STAGE_KEYS = STAGES.map((s) => s.key)
+
+export const CHECKPOINT_AFTER: Record<string, number> = {
+  detailed_spec: 1,
+  code_review: 2,
 }
 
 export interface TestCaseResult {
   id?: string
   name?: string
-  status?: 'passed' | 'failed' | 'skipped' | string
+  status?: 'passed' | 'failed' | 'skipped' | 'running' | string
   message?: string
 }
 
 export interface GeneratedTestFile {
-  path: string
-  content: string
+  path?: string
+  content?: string
+  rationale?: string
   truncated?: boolean
   error?: string
-}
-
-export interface TestRunResult {
-  success?: boolean
-  exit_code?: number
-  test_path?: string
-  total?: number
-  counts?: {
-    passed?: number
-    failed?: number
-    skipped?: number
-    errors?: number
-  }
-  summary?: string
-  stdout?: string
-  stderr?: string
-  error?: string
-  duration_seconds?: number
 }
 
 export interface CommandRunResult {
@@ -202,69 +132,99 @@ export interface CommandRunResult {
   exit_code?: number
   stdout?: string
   stderr?: string
+  summary?: string
+  error?: string
+  duration_seconds?: number
+}
+
+export interface TestRunResult {
+  test_path?: string
+  success?: boolean
+  exit_code?: number
+  stdout?: string
+  stderr?: string
   error?: string
   summary?: string
   duration_seconds?: number
-  blocked?: boolean
+  counts?: {
+    total?: number
+    passed?: number
+    failed?: number
+    errors?: number
+    skipped?: number
+  }
 }
 
 export interface TestReport {
   test_file?: string
   test_files?: string[]
   test_command?: string
+  summary?: string
+  error_log?: string
   total?: number
   passed?: number
   failed?: number
   skipped?: number
   exit_code?: number
   test_cases?: TestCaseResult[]
-  error_log?: string
-  summary?: string
   generated_test_files?: GeneratedTestFile[]
   runner_validation?: {
-    validated?: boolean
     runs?: TestRunResult[]
     commands?: CommandRunResult[]
   }
 }
 
-export interface TestProgressEvent {
-  time: string
-  stream: 'stdout' | 'stderr' | 'system' | string
-  line: string
+export interface GitStatus {
+  is_git: boolean
+  repo_path: string
+  current_branch: string
+  remote_url: string
+  remote_kind: '' | 'github' | 'gitlab'
+  working_tree_clean: boolean
+  has_gh_cli: boolean
+  has_glab_cli: boolean
+  error: string
+  already_published: boolean
+  last_publication?: GitPublishResult | null
+}
+
+export interface GitPublishOptions {
+  do_push: boolean
+  do_pr: boolean
+  branch_prefix?: string
+  title?: string
+  body?: string
+}
+
+export interface GitPublishResult {
+  status: 'pending' | 'committed' | 'pushed' | 'review_created' | 'failed' | 'blocked' | 'skipped'
+  repo_path: string
+  run_id: string
+  base_branch: string
+  branch: string
+  commit: string
+  remote: string
+  pushed: boolean
+  review_url: string
+  review_kind: string
+  changed_files: string[]
+  error: string
+  steps?: { cmd: string; returncode: number; stdout: string; stderr: string }[]
+  working_tree_status?: string
 }
 
 export interface TestProgress {
-  run_id: string
   status: 'idle' | 'preparing' | 'running' | 'passed' | 'failed' | string
-  active_test_path: string
-  test_files: string[]
-  test_cases: TestCaseResult[]
-  runs: TestRunResult[]
-  events: TestProgressEvent[]
-  total: number
-  passed: number
-  failed: number
-  skipped: number
-  exit_code?: number | null
-  started_at?: string | null
-  updated_at?: string | null
-}
-
-export const STAGES = [
-  { key: 'requirement_analysis', label: '需求分析', index: 1 },
-  { key: 'solution_architecture', label: '架构设计', index: 2 },
-  { key: 'detailed_spec', label: '详细规格', index: 3 },
-  { key: 'code_generation', label: '代码生成', index: 4 },
-  { key: 'test_generation', label: '测试生成', index: 5 },
-  { key: 'code_review', label: '代码审查', index: 6 },
-  { key: 'delivery', label: '交付打包', index: 7 },
-] as const
-
-export const STAGE_KEYS = STAGES.map((s) => s.key)
-
-export const CHECKPOINT_AFTER: Record<string, number> = {
-  detailed_spec: 1,
-  code_review: 2,
-  delivery: 3,
+  total?: number
+  passed?: number
+  failed?: number
+  skipped?: number
+  active_test_path?: string
+  test_files?: string[]
+  test_cases?: TestCaseResult[]
+  runs?: TestRunResult[]
+  events?: {
+    stream: string
+    line: string
+  }[]
 }

@@ -9,6 +9,7 @@ from devflow.tools.command_runner import COMMAND_TOOL_SCHEMAS, run_command
 from devflow.tools.repo_tools import REPO_TOOL_SCHEMAS
 from devflow.tools.test_runner import TEST_TOOL_SCHEMAS, run_test
 from devflow.tools.test_selector import find_focused_tests, parse_changed_files
+from devflow.tools.workspace import ensure_frontend_node_modules
 
 
 _DEFAULT_TEST_PATH = "tests/test_generated.py"
@@ -81,7 +82,7 @@ class TestGenerationAgent(BaseAgent):
         # without paying for a fresh `npm install`.
         source_repo = str(getattr(ctx.pipeline, "source_repo_path", "") or "")
         if source_repo:
-            _ensure_frontend_node_modules(repo_root, frontend_root, Path(source_repo))
+            ensure_frontend_node_modules(repo_root, Path(source_repo))
 
         commands_to_try, has_tsconfig = _frontend_validation_commands(frontend_root)
         runs: list[dict[str, Any]] = []
@@ -313,30 +314,6 @@ def _find_frontend_root(repo_root: Path, patch_text: str) -> Path | None:
     if (repo_root / "frontend" / "package.json").is_file():
         return repo_root / "frontend"
     return None
-
-
-def _ensure_frontend_node_modules(workspace_root: Path, frontend_root: Path, source_repo: Path) -> None:
-    """Symlink the source repo's ``node_modules`` into the workspace if missing.
-
-    create_workspace() ignores ``node_modules`` to avoid copying ~200MB per run,
-    so a freshly created worktree has no installed deps and ``tsc``/``npm`` will
-    fail. Symlinking is fast, cheap, and read-only — the validation only needs
-    the source-installed deps to resolve modules.
-    """
-    target = frontend_root / "node_modules"
-    if target.exists():
-        return
-    rel_frontend = frontend_root.relative_to(workspace_root)
-    source_frontend = (source_repo / rel_frontend).resolve()
-    source_modules = source_frontend / "node_modules"
-    if not source_modules.is_dir():
-        return  # nothing to link; tsc will fail with a clear error if invoked
-    try:
-        target.symlink_to(source_modules, target_is_directory=True)
-    except OSError:
-        # On some filesystems symlinks aren't allowed. Fail silently — the
-        # frontend validation will report missing deps in its output anyway.
-        pass
 
 
 def _frontend_validation_commands(frontend_root: Path) -> tuple[list[str], bool]:

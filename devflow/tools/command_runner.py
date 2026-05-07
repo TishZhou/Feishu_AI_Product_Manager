@@ -16,6 +16,10 @@ _SHELL_TOKENS = {"|", "||", "&", "&&", ";", ">", ">>", "<", "`"}
 _NPM_SCRIPTS = {"test", "build", "lint", "typecheck", "check", "coverage"}
 _PYTHON_MODULES = {"pytest", "unittest", "ruff", "mypy"}
 _DIRECT_TOOLS = {"pytest", "ruff", "mypy"}
+# Read-only / type-check tools we let agents run via `npx --no-install`.
+# `--no-install` keeps it offline-safe (no package fetch); the binary must
+# already be in node_modules.
+_NPX_ALLOWED = {"tsc", "eslint", "prettier", "vitest", "jest"}
 _MAX_OUTPUT_CHARS = 12_000
 
 
@@ -107,6 +111,21 @@ def _normalize_allowed_command(tokens: list[str]) -> list[str] | None:
         if _is_allowed_package_command(exe, args):
             return [exe, *args]
         return None
+
+    if exe == "npx":
+        # Strip leading flags like --no-install / --yes / -y to find the tool name.
+        i = 0
+        while i < len(args) and args[i].startswith("-"):
+            i += 1
+        if i >= len(args):
+            return None
+        tool = Path(args[i]).name
+        if tool not in _NPX_ALLOWED:
+            return None
+        # Force --no-install so we never trigger a network package fetch.
+        if "--no-install" not in args[:i]:
+            args = ["--no-install", *args]
+        return ["npx", *args]
 
     if exe == "uv":
         if len(args) >= 2 and args[0] == "run":

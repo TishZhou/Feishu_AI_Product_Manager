@@ -22,6 +22,21 @@ SYSTEM = """【Stage 5 — 代码审查 Code Review】
 - 实现是否满足 acceptance_mapping 和 detailed_spec.traceability。
 - 生成测试代码、pytest 执行结果、项目级验证命令是否一致可信。
 
+【验证环境说明 — 必读】
+- 工作区里 ``node_modules`` 已经从源仓库 **symlink 进来**，TypeScript/Vite/ESLint 都
+  可以直接用。**禁止** 运行 ``npm install`` —— 它已经被 command allowlist 屏蔽，会永远
+  失败，但这不是代码缺陷，只是沙箱策略。
+- 前端 typecheck/build 请使用 ``cwd="frontend"`` 配合下列命令之一：
+    * ``npx --no-install tsc --noEmit -p tsconfig.json``  （推荐，快）
+    * ``npm run build``                                    （慢一点，也行）
+    * ``npm run lint``                                     （ESLint 检查）
+- 如果命令返回 ``"command is not in the validation allowlist"``，那是平台限制，
+  不要把这个当成代码层面的 BLOCKER。请改用上面允许的命令重试，或者直接相信
+  test_report 里 test_generation 阶段的 ``frontend_validation`` 结果。
+- 当 test_report 里 ``frontend_validation.succeeded == true`` 或者
+  ``runner_validation.runs`` 里有 ``success: true`` 的 tsc/build，**不要**再以"我自己跑
+  不通"为理由开 BLOCKER —— 是你的命令选错了，不是代码错了。
+
 【关于 test_report.json 的判读】
 - 如果 test_report.json 顶层有 `frontend_validation` 字段（说明本次改动是纯前端），且 `frontend_validation.succeeded == true` 或 `runner_validation.runs` 中有 `success: true` 的 build/typecheck，那么 **测试覆盖层面已经合规** —— `tsc --noEmit` / `npm run build` 在前端项目里就是等价于 pytest 的"代码能否成立"门禁。
   - 此时**不要**把"未生成单元测试用例"标记为 BLOCKER。
@@ -62,7 +77,7 @@ SYSTEM = """【Stage 5 — 代码审查 Code Review】
       "fix_suggestion": "<修复建议>"
     }
   ],
-  "report_markdown": "<完整中文 review_report.md，换行用 \\n>"
+  "report_markdown": "<完整中文审查报告 markdown，换行用 \\n>"
 }
 
 report_markdown 必须使用以下中文结构（\\n 作为换行）：

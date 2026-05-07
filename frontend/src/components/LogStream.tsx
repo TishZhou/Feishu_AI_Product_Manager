@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { StageResult, RunStatus } from '../types/api'
 import { STAGES } from '../types/api'
+import { getPersona, HUE_TOKENS } from '../data/personas'
 
 interface LogStreamProps {
   stages: StageResult[]
@@ -19,23 +20,13 @@ interface LogEntry {
 }
 
 const TYPE_CONFIG: Record<LogEntry['type'], { text: string; bar: string; prefix: string; rowBg: string }> = {
-  start:   { text: '#93c5fd', bar: '#3b82f6', prefix: '▶', rowBg: 'rgba(59,130,246,0.04)' },
-  success: { text: '#6ee7b7', bar: '#10b981', prefix: '✓', rowBg: 'rgba(16,185,129,0.04)' },
-  fail:    { text: '#fca5a5', bar: '#ef4444', prefix: '✗', rowBg: 'rgba(239,68,68,0.05)'  },
-  reject:  { text: '#fcd34d', bar: '#f59e0b', prefix: '↩', rowBg: 'rgba(245,158,11,0.04)' },
-  llm:     { text: '#c4b5fd', bar: '#8b5cf6', prefix: '⚡', rowBg: 'rgba(139,92,246,0.04)' },
-  tool:    { text: '#7dd3fc', bar: '#0ea5e9', prefix: '⚙', rowBg: 'rgba(14,165,233,0.04)'  },
-  info:    { text: '#64748b', bar: '#1e293b', prefix: '·', rowBg: 'transparent'            },
-}
-
-const STAGE_BADGE: Record<string, string> = {
-  requirement_analysis:  '需求',
-  solution_architecture: '架构',
-  detailed_spec:         '规格',
-  code_generation:       '生成',
-  test_generation:       '测试',
-  code_review:           '审查',
-  delivery:              '交付',
+  start:   { text: '#1D4ED8', bar: '#3B82F6', prefix: '▶', rowBg: 'rgba(59,130,246,0.04)'  },
+  success: { text: '#047857', bar: '#10B981', prefix: '✓', rowBg: 'rgba(16,185,129,0.04)'  },
+  fail:    { text: '#B91C1C', bar: '#EF4444', prefix: '✗', rowBg: 'rgba(239,68,68,0.05)'   },
+  reject:  { text: '#B45309', bar: '#F59E0B', prefix: '↩', rowBg: 'rgba(245,158,11,0.04)'  },
+  llm:     { text: '#5B21B6', bar: '#8B5CF6', prefix: '⚡', rowBg: 'rgba(139,92,246,0.04)' },
+  tool:    { text: '#0369A1', bar: '#0EA5E9', prefix: '⚙', rowBg: 'rgba(14,165,233,0.04)'  },
+  info:    { text: '#475569', bar: '#94A3B8', prefix: '·', rowBg: 'transparent'            },
 }
 
 function getStageName(k: string) {
@@ -47,11 +38,11 @@ function nowStr() {
 }
 
 export function LogStream({ stages, runStatus, runId }: LogStreamProps) {
-  const [logs, setLogs]           = useState<LogEntry[]>([])
+  const [logs, setLogs] = useState<LogEntry[]>([])
   const [connected, setConnected] = useState(false)
-  const containerRef              = useRef<HTMLDivElement>(null)
-  const esRef                     = useRef<EventSource | null>(null)
-  const callIdMap                 = useRef<Map<string, string>>(new Map())
+  const containerRef = useRef<HTMLDivElement>(null)
+  const esRef = useRef<EventSource | null>(null)
+  const callIdMap = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
     if (containerRef.current) {
@@ -95,17 +86,18 @@ export function LogStream({ stages, runStatus, runId }: LogStreamProps) {
       return
     }
 
-    const validType = (['start','success','fail','reject','llm','tool','info'].includes(level)
+    const validType = (['start', 'success', 'fail', 'reject', 'llm', 'tool', 'info'].includes(level)
       ? level : 'info') as LogEntry['type']
-    setLogs(prev => [...prev, { id: `${Date.now()}-${Math.random()}`, time, stageKey, stage: getStageName(stageKey), message, type: validType, streaming: false }])
+    setLogs(prev => [...prev, {
+      id: `${Date.now()}-${Math.random()}`,
+      time, stageKey, stage: getStageName(stageKey),
+      message, type: validType, streaming: false,
+    }])
   }, [])
 
   useEffect(() => {
     if (!runId) {
-      queueMicrotask(() => {
-        setLogs([])
-        setConnected(false)
-      })
+      queueMicrotask(() => { setLogs([]); setConnected(false) })
       return
     }
     if (esRef.current) { esRef.current.close(); esRef.current = null }
@@ -114,98 +106,147 @@ export function LogStream({ stages, runStatus, runId }: LogStreamProps) {
     const es = new EventSource(`/api/runs/${runId}/logs/stream`)
     esRef.current = es
     es.onopen    = () => setConnected(true)
-    es.onmessage = (ev) => { try { handleEvent(JSON.parse(ev.data)); } catch { /* ignore */ } }
-    es.onerror   = () => {
-      setConnected(false)
-      es.close()
-    }
+    es.onmessage = (ev) => { try { handleEvent(JSON.parse(ev.data)) } catch { /* ignore */ } }
+    es.onerror   = () => { setConnected(false); es.close() }
     return () => { es.close(); esRef.current = null; setConnected(false) }
   }, [runId, handleEvent])
 
   const activeStage = runStatus === 'running' ? stages.find(s => s.status === 'running') : undefined
+  const activePersona = activeStage ? getPersona(activeStage.stage_key) : null
+  const activeHue = activePersona ? HUE_TOKENS[activePersona.hue] : null
 
   return (
-    <div className="h-full flex flex-col font-mono text-xs" style={{ background: 'rgba(0,0,0,0.35)' }}>
-      {/* Terminal title bar */}
-      <div
-        className="shrink-0 flex items-center gap-2 px-4 py-2"
-        style={{
-          background: 'rgba(0,0,0,0.35)',
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
-        }}
-      >
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#ff5f56' }} />
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#febc2e' }} />
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: '#28c840' }} />
-        </div>
-        <div className="h-3.5 w-px mx-1" style={{ background: 'rgba(255,255,255,0.07)' }} />
-        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">AI 思考日志</span>
+    <div className="mono" style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      fontSize: 11.5,
+      background: 'white',
+    }}>
+      {/* Title bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 16px',
+        borderBottom: '1px solid var(--c-line)',
+        background: 'var(--c-ink-50)',
+        flexShrink: 0,
+      }}>
+        <span style={{
+          fontFamily: 'Inter',
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--c-ink-500)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.10em',
+        }}>
+          AI 思考日志
+        </span>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
           {runId && (
-            <div className={`flex items-center gap-1.5 text-[10px] font-medium ${connected ? 'text-emerald-400' : 'text-slate-600'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-700'}`} />
-              {connected ? '实时' : '等待中'}
+            <div style={{
+              fontFamily: 'Inter',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 10.5,
+              fontWeight: 500,
+              color: connected ? '#047857' : 'var(--c-ink-400)',
+            }}>
+              <span
+                style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? '#10B981' : 'var(--c-ink-300)' }}
+                className={connected ? 'animate-breathe' : ''}
+              />
+              {connected ? '实时同步' : '等待中'}
             </div>
           )}
-          {activeStage && (
-            <div className="flex items-center gap-1.5 text-[10px] font-medium text-[#93c5fd]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#60a5fa] animate-pulse" />
-              实时推理中
+          {activeStage && activeHue && activePersona && (
+            <div style={{
+              fontFamily: 'Inter',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 10.5,
+              fontWeight: 500,
+              color: activeHue.solidDark,
+            }}>
+              <span
+                style={{ width: 6, height: 6, borderRadius: '50%', background: activeHue.solid }}
+                className="animate-breathe"
+              />
+              {activePersona.name} 推理中
             </div>
           )}
         </div>
       </div>
 
-      {/* Log rows */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
+      {/* Stream */}
+      <div ref={containerRef} style={{ flex: 1, overflowY: 'auto' }}>
         {logs.length === 0 && (
-          <div className="flex items-center justify-center h-full text-slate-700 text-[11px]">
-            {runId ? '正在连接日志流...' : '等待流水线启动...'}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            color: 'var(--c-ink-400)',
+            fontSize: 11.5,
+            fontFamily: 'Inter',
+          }}>
+            {runId ? '正在连接日志流…' : '等待流水线启动'}
           </div>
         )}
 
         {logs.map(log => {
-          const c    = TYPE_CONFIG[log.type]
-          const badge = STAGE_BADGE[log.stageKey]
+          const c = TYPE_CONFIG[log.type]
           return (
             <div
               key={log.id}
-              className="flex items-start min-h-[20px] hover:bg-white/[0.02] transition-colors"
               style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                minHeight: 22,
                 borderLeft: `2px solid ${c.bar}33`,
                 background: c.rowBg,
+                transition: 'background 0.15s ease',
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(15, 23, 42, 0.02)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = c.rowBg }}
             >
-              {/* Time */}
-              <span className="shrink-0 text-slate-700 px-2.5 py-0.5 w-[68px] tabular-nums">{log.time}</span>
+              <span style={{
+                flexShrink: 0, color: 'var(--c-ink-400)',
+                padding: '3px 10px', width: 80,
+                fontFeatureSettings: '"tnum"', fontSize: 11,
+              }}>{log.time}</span>
 
-              {/* Type prefix */}
-              <span className="shrink-0 w-5 py-0.5 text-center" style={{ color: c.text }}>{c.prefix}</span>
+              <span style={{
+                flexShrink: 0, width: 20, padding: '3px 0',
+                textAlign: 'center', color: c.text, fontWeight: 500,
+              }}>{c.prefix}</span>
 
-              {/* Stage badge */}
-              {badge ? (
-                <span
-                  className="shrink-0 text-[9px] font-bold px-1.5 py-[1px] rounded mx-1 my-0.5 tabular-nums"
-                  style={{ background: `${c.bar}22`, color: c.text, border: `1px solid ${c.bar}33` }}
-                >
-                  {badge}
-                </span>
-              ) : (
-                <span className="shrink-0 w-[40px] py-0.5 text-slate-700 px-1">[sys]</span>
-              )}
+              <span style={{
+                flexShrink: 0, fontSize: 9.5, fontWeight: 600,
+                padding: '1px 6px', borderRadius: 4,
+                margin: '4px 6px 0 4px',
+                background: `${c.bar}18`, color: c.text,
+                border: `1px solid ${c.bar}30`,
+                letterSpacing: '0.02em',
+              }}>{log.stage.slice(0, 4)}</span>
 
-              {/* Stage name */}
-              <span className="shrink-0 text-slate-600 py-0.5 min-w-[64px] mr-2">{log.stage}</span>
-
-              {/* Message */}
-              <span className="text-slate-300 py-0.5 pr-4 break-all leading-relaxed whitespace-pre-wrap">
+              <span style={{
+                color: 'var(--c-ink-800)',
+                padding: '3px 16px 3px 4px',
+                lineHeight: 1.6,
+                wordBreak: 'break-word',
+                whiteSpace: 'pre-wrap',
+                flex: 1,
+              }}>
                 {log.message}
                 {log.streaming && (
                   <span
-                    className="inline-block w-1.5 h-3 ml-0.5 translate-y-[2px] animate-blink"
-                    style={{ background: '#a78bfa', opacity: 0.85 }}
+                    style={{ display: 'inline-block', width: 6, height: 12, marginLeft: 2, verticalAlign: -1, background: '#8B5CF6', opacity: 0.85 }}
+                    className="animate-blink"
                   />
                 )}
               </span>
@@ -214,27 +255,17 @@ export function LogStream({ stages, runStatus, runId }: LogStreamProps) {
         })}
 
         {/* Active cursor */}
-        {activeStage && (
-          <div
-            className="flex items-center min-h-[20px]"
-            style={{ borderLeft: '2px solid rgba(99,132,255,0.45)', background: 'rgba(59,130,246,0.04)' }}
-          >
-            <span className="shrink-0 text-slate-700 px-2.5 py-0.5 w-[68px] tabular-nums">{nowStr()}</span>
-            <span className="shrink-0 w-5 py-0.5 text-center text-[#60a5fa]">▶</span>
-            <span
-              className="shrink-0 text-[9px] font-bold px-1.5 py-[1px] rounded mx-1 my-0.5"
-              style={{ background: 'rgba(59,130,246,0.20)', color: '#93c5fd', border: '1px solid rgba(99,132,255,0.30)' }}
-            >
-              {STAGE_BADGE[activeStage.stage_key] || '...'}
-            </span>
-            <span className="shrink-0 text-slate-600 py-0.5 min-w-[64px] mr-2">
-              {STAGES.find(s => s.key === activeStage.stage_key)?.label}
-            </span>
-            <span className="text-[#60a5fa] py-0.5">推理中</span>
-            <span
-              className="inline-block w-1.5 h-3 ml-1.5 translate-y-[2px] animate-blink"
-              style={{ background: '#60a5fa', opacity: 0.85 }}
-            />
+        {activeStage && activeHue && activePersona && (
+          <div style={{
+            display: 'flex', alignItems: 'center', minHeight: 22,
+            borderLeft: `2px solid ${activeHue.solid}`,
+            background: `rgba(${activeHue.pulseRGB}, 0.04)`,
+          }}>
+            <span style={{ flexShrink: 0, color: 'var(--c-ink-400)', padding: '3px 10px', width: 80, fontFeatureSettings: '"tnum"', fontSize: 11 }}>{nowStr()}</span>
+            <span style={{ flexShrink: 0, width: 20, padding: '3px 0', textAlign: 'center', color: activeHue.solid, fontWeight: 500 }}>▶</span>
+            <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 600, padding: '1px 6px', borderRadius: 4, margin: '4px 6px 0 4px', background: activeHue.softBg, color: activeHue.solidDark, border: `1px solid ${activeHue.softBorder}` }}>{activePersona.name}</span>
+            <span style={{ color: activeHue.solidDark, padding: '3px 0' }}>{activePersona.statusVerb}</span>
+            <span style={{ display: 'inline-block', width: 6, height: 12, marginLeft: 6, verticalAlign: -1, background: activeHue.solid, opacity: 0.85 }} className="animate-blink" />
           </div>
         )}
       </div>

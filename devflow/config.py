@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_DEFAULT_MODEL: str = "gpt-5.4"
 
+    # Google Gemini (OpenAI-compatible endpoint)
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    GEMINI_DEFAULT_MODEL: str = "gemini-2.0-flash"
+
     # Volcano Engine Trae (ByteDance) — OpenAI-compatible
     VOLCANO_API_KEY: str = ""
     VOLCANO_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"

@@ -19,7 +19,7 @@ class DetailedSpecAgent(BaseAgent):
         return True
 
     def max_tokens(self) -> int | None:
-        return None
+        return 16000
 
     def build_system_prompt(self, ctx: AgentContext) -> str:
         return prompts.SYSTEM

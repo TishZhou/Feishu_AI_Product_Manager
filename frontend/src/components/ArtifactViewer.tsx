@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, FileCode2 } from 'lucide-react'
 import type { Artifact } from '../types/api'
 import { STAGES } from '../types/api'
 import { apiClient } from '../lib/api'
-import { parseTestReport } from '../lib/testReport'
-import { TestReportView } from './TestReportView'
-import { DiffFileExplorer } from './DiffFileExplorer'
-import { MarkdownReportView } from './MarkdownReportView'
+import { artifactLabel } from '../lib/artifactLabels'
+import { ArtifactContentView } from './ArtifactContentView'
 
 interface ArtifactViewerProps {
   artifact: Artifact | null
@@ -16,19 +14,23 @@ interface ArtifactViewerProps {
 
 export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
   const [content, setContent] = useState('')
-  const isVisualTestReport = useMemo(
-    () => artifact?.filename === 'test_report.json' && !!parseTestReport(content),
-    [artifact?.filename, content],
-  )
 
   useEffect(() => {
     if (artifact) {
-      queueMicrotask(() => setContent(''))
+      setContent('加载中…')
       apiClient.getArtifactContent(artifact).then(data =>
         setContent(typeof data === 'string' ? data : JSON.stringify(data, null, 2))
       )
     }
   }, [artifact])
+
+  // ESC closes
+  useEffect(() => {
+    if (!artifact) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [artifact, onClose])
 
   return (
     <AnimatePresence>
@@ -39,8 +41,12 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40"
-            style={{ background: 'rgba(3,7,18,0.6)', backdropFilter: 'blur(8px)' }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 40,
+              background: 'rgba(15,23,42,0.32)',
+              backdropFilter: 'saturate(180%) blur(14px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(14px)',
+            }}
           />
 
           <motion.div
@@ -48,59 +54,85 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-            className="fixed inset-y-0 right-0 z-50 w-[820px] max-w-[92vw] flex flex-col"
             style={{
-              background: '#0d1117',
-              borderLeft: '1px solid rgba(255,255,255,0.07)',
-              boxShadow: '-20px 0 80px rgba(0,0,0,0.6), -1px 0 0 rgba(51,112,255,0.1)',
+              position: 'fixed', insetBlock: 0, right: 0, zIndex: 50,
+              width: 880, maxWidth: '92vw',
+              display: 'flex', flexDirection: 'column',
+              background: 'white',
+              borderLeft: '1px solid var(--c-line)',
+              boxShadow: '-24px 0 60px rgba(15,23,42,0.10)',
             }}
           >
             {/* Header */}
-            <div className="h-14 shrink-0 flex items-center justify-between px-5"
-              style={{
-                background: '#161b22',
-                borderBottom: '1px solid rgba(255,255,255,0.05)',
-              }}>
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-1.5 rounded-lg shrink-0"
-                  style={{ background: 'rgba(51,112,255,0.12)', border: '1px solid rgba(51,112,255,0.2)' }}>
-                  <FileCode2 className="w-4 h-4 text-[#3370ff]" />
+            <div style={{
+              height: 60, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0 20px',
+              background: 'rgba(252,253,254,0.85)',
+              backdropFilter: 'saturate(180%) blur(12px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(12px)',
+              borderBottom: '1px solid var(--c-line)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <div style={{
+                  width: 32, height: 32, flexShrink: 0,
+                  display: 'grid', placeItems: 'center',
+                  background: 'rgba(59,130,246,0.08)',
+                  border: '1px solid rgba(59,130,246,0.18)',
+                  borderRadius: 9,
+                }}>
+                  <FileCode2 size={15} strokeWidth={1.8} color="#1D4ED8" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-white font-mono text-sm truncate">{artifact.filename}</p>
-                  <p className="text-slate-500 text-[11px] font-mono">
-                    {(artifact.size_bytes / 1024).toFixed(1)} KB · {STAGES.find(s => s.key === artifact.stage_key)?.label ?? artifact.stage_key}
+                <div style={{ minWidth: 0 }}>
+                  <p className="display" style={{
+                    margin: 0, fontSize: 14, fontWeight: 600,
+                    color: 'var(--c-ink-900)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    letterSpacing: '-0.01em',
+                  }}>
+                    {artifactLabel(artifact.filename)}
                   </p>
-                  <p className="text-slate-400 text-[10px] font-mono truncate" title={`artifacts/${artifact.run_id}/`}>
-                    产物目录：artifacts/{artifact.run_id}/
+                  <p className="mono" style={{
+                    margin: '2px 0 0', fontSize: 11, color: 'var(--c-ink-500)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {artifact.filename} · {(artifact.size_bytes / 1024).toFixed(1)} KB · {STAGES.find(s => s.key === artifact.stage_key)?.label ?? artifact.stage_key}
                   </p>
                 </div>
               </div>
 
               <button
                 onClick={onClose}
-                className="btn-close p-2 rounded-lg text-slate-500 shrink-0 ml-4"
+                style={{
+                  width: 32, height: 32, flexShrink: 0,
+                  display: 'grid', placeItems: 'center',
+                  background: 'transparent', border: '1px solid transparent',
+                  borderRadius: 8, cursor: 'pointer',
+                  color: 'var(--c-ink-500)',
+                  transition: 'all 0.18s ease',
+                  marginLeft: 16, fontFamily: 'inherit',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--c-ink-50)'
+                  e.currentTarget.style.borderColor = 'var(--c-line-2)'
+                  e.currentTarget.style.color = 'var(--c-ink-900)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.borderColor = 'transparent'
+                  e.currentTarget.style.color = 'var(--c-ink-500)'
+                }}
               >
-                <X className="w-4 h-4" />
+                <X size={15} strokeWidth={1.8} />
               </button>
             </div>
 
-            {/* Code viewer */}
-            <div className="flex-1 overflow-auto" style={{ background: '#0d1117' }}>
-              {isVisualTestReport ? (
-                <TestReportView content={content} />
-              ) : artifact.filename.endsWith('.patch') ? (
-                <DiffFileExplorer text={content || '加载中...'} showFileMode={false} />
-              ) : artifact.filename.endsWith('.md') ? (
-                <MarkdownReportView content={content || '加载中...'} />
-              ) : (
-                <pre
-                  className="text-xs font-mono text-slate-300 p-5 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
-                  style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
-                >
-                  {content || '加载中...'}
-                </pre>
-              )}
+            {/* Content viewer */}
+            <div style={{
+              flex: 1, overflow: 'auto',
+              background: 'var(--c-bg)',
+            }}>
+              <ArtifactContentView filename={artifact.filename} content={content} variant="light" />
             </div>
           </motion.div>
         </>

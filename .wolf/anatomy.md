@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-06T09:06:00.532Z
-> Files: 538 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T02:05:14.390Z
+> Files: 556 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -824,17 +824,19 @@
 
 ## devflow/agents/
 
-- `base.py` — class: self, run, build_system_prompt, build_user_prompt + 5 more (~1918 tok)
-- `code_generation.py` — CodeGenerationAgent: run, build_system_prompt, build_user_prompt, build_user_prompt_for_workspace + (~2821 tok)
-- `code_review.py` — CodeReviewAgent: json_mode, max_tool_rounds, build_system_prompt, build_user_prompt + 2 more (~1767 tok)
+- `base.py` — class: self, run, build_system_prompt, build_user_prompt + 7 more (~2548 tok)
+- `code_generation.py` — CodeGenerationAgent: run, build_system_prompt, build_user_prompt, build_user_prompt_for_workspace + (~2966 tok)
+- `code_review.py` — CodeReviewAgent: json_mode, max_tool_rounds, build_system_prompt, build_user_prompt + 2 more (~1792 tok)
 - `delivery.py` — DeliveryAgent: build_system_prompt, build_user_prompt, parse_response (~707 tok)
 - `detailed_spec.py` — DetailedSpecAgent: json_mode, max_tokens, build_system_prompt, build_user_prompt + 1 more (~648 tok)
+- `requirement_analysis.py` — RequirementAnalysisAgent: render_requirement_prd, json_mode, max_tokens, build_system_prompt + 2 mor (~1928 tok)
 - `solution_architecture.py` — SolutionArchitectureAgent: run, build_system_prompt, max_tokens, build_user_prompt + 2 more (~1823 tok)
-- `test_generation.py` — TestGenerationAgent: json_mode, max_tokens, run, build_system_prompt + 3 more (~7062 tok)
+- `test_generation.py` — TestGenerationAgent: json_mode, max_tokens, run, build_system_prompt + 3 more (~6754 tok)
 
 ## devflow/agents/prompts/
 
-- `code_review.py` (~636 tok)
+- `code_generation.py` (~1016 tok)
+- `code_review.py` (~1318 tok)
 - `solution_architecture.py` (~977 tok)
 - `test_generation.py` (~903 tok)
 
@@ -843,11 +845,13 @@
 - `checkpoints.py` — API: 4 endpoints (~1047 tok)
 - `meta.py` — API: 4 endpoints (~467 tok)
 - `pipelines.py` — API: 3 endpoints (~973 tok)
-- `runs.py` — API: 13 endpoints (~3908 tok)
+- `runs.py` — API: 13 endpoints (~5511 tok)
+- `ui_canvas.py` — API: 1 endpoints (~4099 tok)
 
 ## devflow/core/
 
-- `orchestrator.py` — PipelineOrchestrator: register_run, pause, resume, resolve_checkpoint + 5 more (~13906 tok)
+- `orchestrator.py` — PipelineOrchestrator: register_run, pause, resume, resolve_checkpoint + 5 more (~17716 tok)
+- `pipeline_definition.py` — class: get_agent_class, get_stage, stages_from (~1122 tok)
 
 ## devflow/providers/
 
@@ -860,31 +864,45 @@
 
 ## devflow/services/
 
+- `git_integration.py` — inspect_repo, publish_run_changes (~3653 tok)
 - `repo_map.py` — detect_project_kinds, build_repo_context_summary (~8670 tok)
 - `repo_safety.py` — Detect whether a user-selected repo path is DevFlow's own source code. (~508 tok)
 - `source_apply.py` — Apply a generated patch to the source repo with a backup so it can be rolled back. (~2980 tok)
 
 ## devflow/tools/
 
-- `workspace.py` — Isolated workspace creation — git worktree with shutil.copytree fallback. (~1335 tok)
+- `command_runner.py` — Safe project validation commands exposed to coding agents. (~1964 tok)
+- `workspace.py` — Isolated workspace creation — git worktree with shutil.copytree fallback. (~2280 tok)
 
 ## frontend/src/components/
 
-- `ConsoleView.tsx` — STATUS_LABEL (~4164 tok)
-- `SetupView.tsx` — SetupView — renders form (~6112 tok)
+- `ArtifactContentView.tsx` — isPatchFilename (~5446 tok)
+- `ArtifactViewer.tsx` — ArtifactViewer (~1582 tok)
+- `CheckpointModal.tsx` — PROVIDER_OPTIONS (~6394 tok)
+- `ConsoleView.tsx` — STATUS_LABEL (~7001 tok)
+- `DetailView.tsx` — formatTimeShort (~8308 tok)
+- `GitIntegrationModal.tsx` — GitIntegrationModal (~5906 tok)
+- `PipelineGraph.tsx` — formatDur (~2179 tok)
+- `SetupView.tsx` — AGENTS (~12378 tok)
+- `TestReportView.tsx` — normalizeReport (~4886 tok)
 
 ## frontend/src/hooks/
 
-- `useDevFlow.ts` — Exports useWorkspace, useRepoCheck, useSourceApplicationStatus, useRollbackRun + 13 more (~1629 tok)
+- `useDevFlow.ts` — Exports useWorkspace, useCreatePipeline, useCreateRun, useRun + 9 more (~1473 tok)
 
 ## frontend/src/lib/
 
-- `api.ts` — API routes: POST, GET (5 endpoints) (~1280 tok)
+- `api.ts` — API routes: POST, GET (10 endpoints) (~1607 tok)
+- `artifactLabels.ts` — Exports ARTIFACT_LABEL, artifactLabel (~240 tok)
+- `stageArtifacts.ts` — .md is preferred where available — those are the polished, user-facing (~538 tok)
 
 ## frontend/src/types/
 
-- `api.ts` — Exports Pipeline, PipelineCreate, RepoCheck, SourceApplicationStatus + 22 more (~1619 tok)
+- `api.ts` — Exports Pipeline, PipelineCreate, Run, RunStatus + 16 more (~1392 tok)
 
 ## tests/
 
+- `test_agent_contracts.py` — test_all_agents_declare_valid_io_contracts, test_openai_reasoning_models_use_max_completion_tokens, (~842 tok)
+- `test_git_integration.py` — test_publish_run_changes_creates_branch_and_commit, test_publish_run_changes_blocks_dirty_worktree,  (~917 tok)
 - `test_orchestrator_quality_gate.py` — test_test_retry_stage_keeps_generated_test_collection_errors_in_test_generation, test_test_retry_sta (~428 tok)
+- `test_requirement_analysis_prd.py` — test_render_requirement_prd_from_spec, test_requirement_analysis_returns_prd_and_json_artifacts (~680 tok)

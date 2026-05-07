@@ -8,6 +8,8 @@ build/
 venv/
 /artifacts/
 data/
+!frontend/src/data/
+!frontend/src/data/**
 .pytest_cache/
 .ruff_cache/
 *.log

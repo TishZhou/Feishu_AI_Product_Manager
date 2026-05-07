@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
-import type { PipelineCreate } from '../types/api'
+import type { PipelineCreate, GitPublishOptions } from '../types/api'
 
 export function useWorkspace() {
   return useQuery({
@@ -8,36 +8,6 @@ export function useWorkspace() {
     queryFn: () => apiClient.getWorkspace(),
     staleTime: Infinity,
     retry: false,
-  })
-}
-
-export function useRepoCheck(path: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ['repo-check', path],
-    queryFn: () => apiClient.checkRepo(path),
-    enabled: enabled && path.length > 0,
-    staleTime: 5_000,
-    retry: false,
-  })
-}
-
-export function useSourceApplicationStatus(runId: string | null, enabled: boolean = true) {
-  return useQuery({
-    queryKey: ['source-application', runId],
-    queryFn: () => apiClient.getSourceApplicationStatus(runId!),
-    enabled: enabled && !!runId,
-    refetchInterval: (query) => (query.state.data?.applied ? false : 4000),
-    retry: false,
-  })
-}
-
-export function useRollbackRun() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (runId: string) => apiClient.rollbackRun(runId),
-    onSuccess: (_data, runId) => {
-      qc.invalidateQueries({ queryKey: ['source-application', runId] })
-    },
   })
 }
 
@@ -53,12 +23,6 @@ export function useCreateRun() {
   })
 }
 
-export function useExtractReferenceDocuments() {
-  return useMutation({
-    mutationFn: (files: File[]) => apiClient.extractReferenceDocuments(files),
-  })
-}
-
 export function useRun(runId: string | null) {
   return useQuery({
     queryKey: ['run', runId],
@@ -66,7 +30,13 @@ export function useRun(runId: string | null) {
     enabled: !!runId,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status && ['created', 'running', 'waiting_for_clarification'].includes(status) ? 2000 : false
+      // Poll while the run is alive. Terminal statuses stop polling.
+      // We must keep polling through waiting_for_approval / waiting_for_clarification
+      // so the checkpoint modal pops up when the orchestrator transitions back to
+      // running and then to waiting_for_approval after a clarification round.
+      const terminal = ['completed', 'failed', 'terminated']
+      if (status && terminal.includes(status)) return false
+      return 2000
     },
   })
 }
@@ -100,27 +70,6 @@ export function useRunCheckpoints(runId: string | null) {
   })
 }
 
-export function useCodeReviewFiles(runId: string | null, enabled = true) {
-  return useQuery({
-    queryKey: ['run', runId, 'code-review-files'],
-    queryFn: () => apiClient.getCodeReviewFiles(runId!),
-    enabled: !!runId && enabled,
-    refetchInterval: enabled ? 2000 : false,
-  })
-}
-
-export function useTestProgress(runId: string | null, enabled = true) {
-  return useQuery({
-    queryKey: ['run', runId, 'test-progress'],
-    queryFn: () => apiClient.getTestProgress(runId!),
-    enabled: !!runId && enabled,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status
-      return enabled && (!status || ['preparing', 'running'].includes(status)) ? 1000 : 2000
-    },
-  })
-}
-
 export function useRunActions() {
   const queryClient = useQueryClient()
 
@@ -139,29 +88,53 @@ export function useRunActions() {
     onSuccess: (_, runId) => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
   })
 
-  return { pause, resume, terminate }
-}
-
-export function useSubmitClarification() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: ({ runId, answers }: { runId: string; answers: string }) =>
-      apiClient.submitClarification(runId, { answered_by: 'user', answers }),
+  const retryStage = useMutation({
+    mutationFn: ({ runId, stageKey }: { runId: string; stageKey: string }) =>
+      apiClient.retryRunFromStage(runId, stageKey),
     onSuccess: (_, { runId }) => {
       queryClient.invalidateQueries({ queryKey: ['run', runId] })
-      queryClient.invalidateQueries({ queryKey: ['run', runId, 'stages'] })
-      queryClient.invalidateQueries({ queryKey: ['run', runId, 'artifacts'] })
+    },
+  })
+
+  return { pause, resume, terminate, retryStage }
+}
+
+export function useRunTokenUsage(runId: string | null) {
+  return useQuery({
+    queryKey: ['run', runId, 'token-usage'],
+    queryFn: () => apiClient.getTokenUsage(runId!),
+    enabled: !!runId,
+    refetchInterval: 2000,
+  })
+}
+
+export function useGitStatus(runId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['run', runId, 'git-status'],
+    queryFn: () => apiClient.getGitStatus(runId!),
+    enabled: enabled && !!runId,
+    staleTime: 10_000,
+    retry: false,
+  })
+}
+
+export function useGitPublish() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ runId, options }: { runId: string; options: GitPublishOptions }) =>
+      apiClient.publishRunGit(runId, options),
+    onSuccess: (_, { runId }) => {
+      queryClient.invalidateQueries({ queryKey: ['run', runId, 'git-status'] })
     },
   })
 }
 
-export function useClarification(runId: string | null) {
+export function useTestProgress(runId: string | null) {
   return useQuery({
-    queryKey: ['run', runId, 'clarification'],
-    queryFn: () => apiClient.getClarification(runId!),
+    queryKey: ['run', runId, 'test-progress'],
+    queryFn: () => apiClient.getTestProgress(runId!),
     enabled: !!runId,
-    refetchInterval: 2000,
+    refetchInterval: 1000,
   })
 }
 
@@ -169,8 +142,13 @@ export function useCheckpointActions() {
   const queryClient = useQueryClient()
 
   const approve = useMutation({
-    mutationFn: ({ id, decided_by, reason }: { id: string; decided_by: string; reason: string }) =>
-      apiClient.approveCheckpoint(id, decided_by, reason),
+    mutationFn: ({
+      id, decided_by, reason, next_provider, next_model,
+    }: {
+      id: string; decided_by: string; reason: string
+      next_provider?: string; next_model?: string
+    }) =>
+      apiClient.approveCheckpoint(id, decided_by, reason, next_provider, next_model),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run'] })
     },
@@ -178,16 +156,15 @@ export function useCheckpointActions() {
 
   const reject = useMutation({
     mutationFn: ({
-      id,
-      decided_by,
-      reason,
-      retry_stage_key,
+      id, decided_by, reason, retry_stage_key, next_provider, next_model,
     }: {
       id: string
       decided_by: string
       reason: string
       retry_stage_key: string
-    }) => apiClient.rejectCheckpoint(id, decided_by, reason, retry_stage_key),
+      next_provider?: string
+      next_model?: string
+    }) => apiClient.rejectCheckpoint(id, decided_by, reason, retry_stage_key, next_provider, next_model),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['run'] })
     },

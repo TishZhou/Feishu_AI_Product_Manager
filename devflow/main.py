@@ -1,10 +1,16 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from devflow.api import checkpoints, meta, pipelines, reference_documents, runs
+from devflow.api import checkpoints, meta, pipelines, reference_documents, runs, ui_canvas
 from devflow.db.engine import create_tables
+
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
 
 def _setup_logging() -> None:
@@ -89,13 +95,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(pipelines.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(checkpoints.router, prefix="/api")
 app.include_router(meta.router, prefix="/api")
 app.include_router(reference_documents.router, prefix="/api")
+app.include_router(ui_canvas.router, prefix="/api")
 
 
-@app.get("/", include_in_schema=False)
-async def root():
-    return {"service": "DevFlow Engine", "version": "0.1.0", "docs": "/docs"}
+if FRONTEND_DIST.exists():
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        index = FRONTEND_DIST / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"service": "DevFlow Engine", "version": "0.1.0", "docs": "/docs"}
+else:
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return {"service": "DevFlow Engine", "version": "0.1.0", "docs": "/docs"}

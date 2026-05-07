@@ -1,35 +1,70 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AlertCircle, Send } from 'lucide-react'
-import { useClarification, useSubmitClarification } from '../hooks/useDevFlow'
+import { MessageSquare, Send } from 'lucide-react'
+import { apiClient } from '../lib/api'
 
 interface ClarificationModalProps {
   runId: string
+  onSubmitted?: () => void
 }
 
-function normalizeItems(items: unknown): string[] {
-  if (!Array.isArray(items)) return []
-  return items
-    .map((item) => {
-      if (typeof item === 'string') return item
-      if (item && typeof item === 'object') return JSON.stringify(item)
-      return String(item ?? '')
-    })
-    .map(item => item.trim())
-    .filter(Boolean)
-}
-
-export function ClarificationModal({ runId }: ClarificationModalProps) {
-  const submitClarification = useSubmitClarification()
-  const { data: payload, isLoading, isError } = useClarification(runId)
+export function ClarificationModal({ runId, onSubmitted }: ClarificationModalProps) {
   const [answers, setAnswers] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [loadingClarification, setLoadingClarification] = useState(true)
+  const [clarification, setClarification] = useState<{
+    title?: string
+    summary?: string
+    open_questions?: string[]
+    missing_critical_info?: string[]
+    ambiguities?: string[]
+    instruction?: string
+  } | null>(null)
 
-  const questionGroups = [
-    { title: '待确认问题', items: normalizeItems(payload?.open_questions) },
-    { title: '缺失的关键信息', items: normalizeItems(payload?.missing_critical_info) },
-    { title: '当前歧义', items: normalizeItems(payload?.ambiguities) },
-  ]
-  const hasClarificationDetails = questionGroups.some(group => group.items.length > 0)
+  useEffect(() => {
+    let cancelled = false
+    let attempts = 0
+
+    const hasQuestions = (data: typeof clarification) =>
+      !!(
+        data?.open_questions?.filter(Boolean).length ||
+        data?.missing_critical_info?.filter(Boolean).length ||
+        data?.ambiguities?.filter(Boolean).length
+      )
+
+    const load = async () => {
+      attempts += 1
+      try {
+        const data = await apiClient.getRunClarification(runId)
+        if (cancelled) return
+        setClarification(data)
+        setLoadingClarification(!hasQuestions(data))
+        if (hasQuestions(data) || attempts >= 20) return
+      } catch {
+        if (!cancelled) setClarification(null)
+      }
+      if (!cancelled) window.setTimeout(load, 1500)
+    }
+
+    setLoadingClarification(true)
+    load()
+    return () => { cancelled = true }
+  }, [runId])
+
+  const handleSubmit = async () => {
+    if (!answers.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      await apiClient.clarifyRun(runId, answers.trim())
+      setSubmitted(true)
+      onSubmitted?.()
+    } catch {
+      // silently ignore — run will continue polling
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -37,117 +72,166 @@ export function ClarificationModal({ runId }: ClarificationModalProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-6"
-        style={{ background: 'rgba(3,7,18,0.82)', backdropFilter: 'blur(24px)' }}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(10, 22, 40, 0.55)',
+          backdropFilter: 'blur(20px)',
+        }}
       >
         <motion.div
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          className="w-full max-w-2xl rounded-2xl overflow-hidden"
+          initial={{ opacity: 0, scale: 0.96, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 16 }}
+          transition={{ type: 'spring', damping: 24, stiffness: 260 }}
           style={{
-            background: 'linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(3,7,18,0.98) 100%)',
-            border: '1px solid rgba(251,191,36,0.28)',
-            boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
+            width: '100%', maxWidth: 500,
+            background: 'white',
+            borderRadius: 20,
+            boxShadow: 'var(--c-shadow-lg)',
+            border: '1px solid var(--c-line-2)',
+            overflow: 'hidden',
           }}
         >
-          <div className="p-6 border-b border-white/10">
-            <div className="flex items-start gap-3">
-              <div
-                className="p-2.5 rounded-xl shrink-0"
-                style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.28)' }}
-              >
-                <AlertCircle className="w-5 h-5 text-amber-300" />
+          {/* Header */}
+          <div style={{
+            padding: '20px 24px 16px',
+            borderBottom: '1px solid var(--c-line)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: 'rgba(245, 158, 11, 0.10)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                display: 'grid', placeItems: 'center',
+              }}>
+                <MessageSquare size={16} color="#B45309" strokeWidth={1.8} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-white">{payload?.title || '需求澄清'}</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  {payload?.instruction || 'Stage 1 发现部分需求会影响后续架构或验收判断，请补充说明后重新分析。'}
+                <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--c-ink-900)', margin: 0 }}>
+                  需要补充说明
+                </h2>
+                <p style={{ fontSize: 12, color: 'var(--c-ink-500)', margin: '2px 0 0' }}>
+                  AI 在当前阶段需要更多信息才能继续
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-            {payload?.summary && (
-              <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">当前理解</p>
-                <p className="text-sm text-slate-200 leading-relaxed">{payload.summary}</p>
-                {payload?.confidence_score !== undefined && payload?.confidence_score !== null && (
-                  <p className="text-[11px] text-amber-300/80 mt-3">
-                    置信度：{String(payload.confidence_score)}
+          {/* Body */}
+          <div style={{ padding: '20px 24px 24px' }}>
+            {submitted ? (
+              <div style={{
+                textAlign: 'center', padding: '24px 0',
+                color: 'var(--c-ink-500)', fontSize: 14,
+              }}>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>✓</div>
+                <div style={{ color: '#047857', fontWeight: 500 }}>已提交，等待 AI 继续处理…</div>
+              </div>
+            ) : (
+              <>
+                {clarification?.summary && (
+                  <p style={{
+                    fontSize: 13, color: 'var(--c-ink-600)',
+                    lineHeight: 1.6, marginBottom: 14,
+                  }}>
+                    {clarification.summary}
                   </p>
                 )}
-              </div>
+
+                <QuestionBlock
+                  title="AI 想确认的问题"
+                  items={clarification?.open_questions}
+                  empty={loadingClarification ? 'AI 正在整理澄清问题，页面会自动刷新…' : '暂未生成明确问题，请直接补充你认为关键的信息。'}
+                />
+                <QuestionBlock title="缺失的关键信息" items={clarification?.missing_critical_info} />
+                <QuestionBlock title="仍存在的歧义" items={clarification?.ambiguities} />
+
+                <textarea
+                  value={answers}
+                  onChange={(e) => setAnswers(e.target.value)}
+                  placeholder={clarification?.instruction || '请按上方问题逐条输入补充说明…'}
+                  rows={6}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    background: 'var(--c-ink-50)',
+                    border: '1px solid var(--c-line-2)',
+                    borderRadius: 10,
+                    fontSize: 13,
+                    color: 'var(--c-ink-900)',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    transition: 'border-color 0.18s ease',
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#3B82F6' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--c-line-2)' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+                  }}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!answers.trim() || submitting}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '10px 20px',
+                      background: answers.trim() ? 'linear-gradient(135deg, #2563EB, #1D4ED8)' : 'var(--c-ink-100)',
+                      color: answers.trim() ? 'white' : 'var(--c-ink-400)',
+                      border: 'none',
+                      borderRadius: 10,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: answers.trim() && !submitting ? 'pointer' : 'not-allowed',
+                      transition: 'all 0.2s ease',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <Send size={13} strokeWidth={1.8} />
+                    {submitting ? '提交中…' : '提交回复'}
+                  </button>
+                </div>
+              </>
             )}
-
-            {isLoading && (
-              <div className="rounded-xl p-4" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.22)' }}>
-                <p className="text-sm text-amber-200 leading-relaxed">
-                  正在读取需求澄清内容...
-                </p>
-              </div>
-            )}
-
-            {isError && (
-              <div className="rounded-xl p-4" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.22)' }}>
-                <p className="text-sm text-red-200 leading-relaxed">
-                  无法读取需求澄清内容，请确认后端服务仍在运行。
-                </p>
-              </div>
-            )}
-
-            {questionGroups.map(group => group.items.length > 0 && (
-              <div key={group.title}>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">{group.title}</p>
-                <ul className="space-y-2">
-                  {group.items.map((item, index) => (
-                    <li key={`${group.title}-${index}`} className="text-sm text-slate-200 leading-relaxed rounded-lg px-3 py-2 bg-white/[0.035]">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-
-            {!isLoading && !isError && !hasClarificationDetails && (
-              <div className="rounded-xl p-4" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.22)' }}>
-                <p className="text-sm text-amber-100 leading-relaxed">
-                  后端还没有返回结构化澄清问题。你仍可以直接补充需求范围、优先级、边界条件和验收标准。
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">你的补充说明</label>
-              <textarea
-                value={answers}
-                onChange={(e) => setAnswers(e.target.value)}
-                placeholder="逐条回答上面的问题。也可以补充范围、优先级、边界条件、验收标准等信息。"
-                className="w-full h-36 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 resize-none"
-                style={{
-                  background: 'rgba(0,0,0,0.28)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  outline: 'none',
-                }}
-              />
-            </div>
-
-            <button
-              type="button"
-              disabled={!answers.trim() || submitClarification.isPending}
-              onClick={() => submitClarification.mutate({ runId, answers: answers.trim() })}
-              className="w-full py-3 rounded-xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{
-                background: 'linear-gradient(135deg,#f59e0b,#2563eb)',
-                boxShadow: '0 14px 36px rgba(37,99,235,0.28)',
-              }}
-            >
-              <Send className="w-4 h-4" />
-              {submitClarification.isPending ? '正在提交...' : '提交澄清并重新分析'}
-            </button>
           </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>
+  )
+}
+
+function QuestionBlock({ title, items, empty }: { title: string; items?: string[]; empty?: string }) {
+  const visibleItems = (items || []).filter(Boolean)
+  if (!visibleItems.length && !empty) return null
+
+  return (
+    <div style={{
+      marginBottom: 14,
+      padding: '12px 14px',
+      background: 'rgba(245,158,11,0.06)',
+      border: '1px solid rgba(245,158,11,0.18)',
+      borderRadius: 12,
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#92400E', marginBottom: 8 }}>
+        {title}
+      </div>
+      {visibleItems.length ? (
+        <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 7 }}>
+          {visibleItems.map((item, index) => (
+            <li key={`${index}-${item}`} style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--c-ink-700)' }}>
+              {item}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--c-ink-500)' }}>{empty}</p>
+      )}
+    </div>
   )
 }

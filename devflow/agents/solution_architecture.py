@@ -67,7 +67,7 @@ class SolutionArchitectureAgent(BaseAgent):
         return prompts.SYSTEM
 
     def max_tokens(self) -> int | None:
-        return 5000
+        return 12000
 
     def build_user_prompt(self, ctx: AgentContext) -> str:
         req_spec = self._get_artifact(ctx, "requirement_analysis", "requirement_spec.json", "{}")
@@ -142,8 +142,10 @@ Generate solution_contract.json now. Use only real paths from the repo context s
             provider=ctx.pipeline.provider,
             tool_dispatcher=None,
             json_mode=True,
-            max_tokens=3500,
+            max_tokens=12000,
             cache_key="devflow:solution_architecture:repair",
+            run_id=ctx.run_id,
+            stage_key=ctx.stage_key,
         )
         contract_text = _extract_json_object(repaired)
         try:

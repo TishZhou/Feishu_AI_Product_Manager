@@ -1,19 +1,77 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Check, X, AlertTriangle, RotateCcw, ShieldCheck } from 'lucide-react'
-import type { Checkpoint, Artifact, CodeReviewFile } from '../types/api'
+import { Check, X, AlertTriangle, RotateCcw, FastForward, Cpu } from 'lucide-react'
+import type { Checkpoint, Artifact } from '../types/api'
 import { STAGES } from '../types/api'
-import { useCheckpointActions, useCodeReviewFiles } from '../hooks/useDevFlow'
+import { useCheckpointActions } from '../hooks/useDevFlow'
 import { apiClient } from '../lib/api'
-import { DiffFileExplorer } from './DiffFileExplorer'
+import { artifactLabel } from '../lib/artifactLabels'
+import { ArtifactContentView } from './ArtifactContentView'
 
 interface CheckpointModalProps {
   checkpoint: Checkpoint
   artifacts: Artifact[]
 }
 
-function artifactFolder(runId?: string) {
-  return runId ? `artifacts/${runId}/` : 'artifacts/'
+// Same options as SetupView's openai picker, plus "保持当前" sentinel.
+const PROVIDER_OPTIONS = [
+  { value: '', label: '保持当前' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'volcano', label: 'Volcano' },
+]
+const OPENAI_MODELS = [
+  { value: '', label: '保持当前' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
+]
+
+const LABEL_TEXT: Record<string, { title: string; subtitle: string; approveText: string; rejectText: string; intent: 'review' | 'intervention' }> = {
+  post_design_review: {
+    title: '设计审核',
+    subtitle: '请审阅前序需求与方案，确认无误后批准进入实现阶段',
+    approveText: '批准并继续',
+    rejectText: '驳回并重试',
+    intent: 'review',
+  },
+  post_implementation_review: {
+    title: '实现审核',
+    subtitle: '请审阅生成的代码、测试结果与代码审查报告',
+    approveText: '批准并继续',
+    rejectText: '驳回并重试',
+    intent: 'review',
+  },
+  pre_git_delivery: {
+    title: '交付前确认',
+    subtitle: '审阅最终补丁，批准后将应用到源仓库',
+    approveText: '批准并交付',
+    rejectText: '驳回并重试',
+    intent: 'review',
+  },
+  test_failure_intervention: {
+    title: '测试持续失败',
+    subtitle: 'AI 自动重试已达上限。可以跳过这次测试，或给出修复指引让 AI 再试',
+    approveText: '跳过失败的测试',
+    rejectText: '带指引重新生成',
+    intent: 'intervention',
+  },
+  review_blocker_intervention: {
+    title: '代码审查未通过',
+    subtitle: 'BLOCKER 问题在多次自动重试后仍未解决。可跳过审查继续，或给出指引让 AI 修正',
+    approveText: '跳过 BLOCKER 继续',
+    rejectText: '带指引让 AI 修正',
+    intent: 'intervention',
+  },
+}
+
+function meta(checkpoint: Checkpoint) {
+  return LABEL_TEXT[checkpoint.label] ?? {
+    title: '人工审核',
+    subtitle: `检查点 #${checkpoint.checkpoint_number}`,
+    approveText: '批准并继续',
+    rejectText: '驳回并重试',
+    intent: 'review' as const,
+  }
 }
 
 export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps) {
@@ -21,12 +79,19 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
   const [reason, setReason] = useState('')
   const [retryStage, setRetryStage] = useState(checkpoint.retry_stage_key)
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null)
-  const [activeReviewFile, setActiveReviewFile] = useState<string | null>(null)
-  const [fileDecisions, setFileDecisions] = useState<Record<string, { decision: 'pending' | 'approved' | 'rejected'; note: string }>>({})
   const [content, setContent] = useState<string>('')
-  const isCodeCheckpoint = checkpoint.checkpoint_number === 2
-  const isDeliveryCheckpoint = checkpoint.checkpoint_number === 3
-  const { data: codeReview } = useCodeReviewFiles(checkpoint.run_id, isCodeCheckpoint)
+  const [nextProvider, setNextProvider] = useState('')
+  const [nextModel, setNextModel] = useState('')
+  const [customModel, setCustomModel] = useState('')
+
+  // When user changes provider, clear stale model selection.
+  useEffect(() => {
+    setNextModel('')
+    setCustomModel('')
+  }, [nextProvider])
+
+  const cpMeta = meta(checkpoint)
+  const isIntervention = cpMeta.intent === 'intervention'
 
   const requiredStages = useMemo(
     () => JSON.parse(checkpoint.required_stage_keys) as string[],
@@ -37,75 +102,31 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
     [artifacts, requiredStages]
   )
 
-  const selectedArtifactId = relevantArtifacts.some(a => a.id === activeArtifactId)
-    ? activeArtifactId
-    : relevantArtifacts[0]?.id ?? null
-  const selectedArtifact = relevantArtifacts.find(a => a.id === selectedArtifactId) ?? null
+  useEffect(() => {
+    if (relevantArtifacts.length > 0 && !activeArtifactId) {
+      setActiveArtifactId(relevantArtifacts[0].id)
+    }
+  }, [relevantArtifacts, activeArtifactId])
 
   useEffect(() => {
-    if (!isCodeCheckpoint && selectedArtifactId) {
-      const artifact = artifacts.find(a => a.id === selectedArtifactId)
+    if (activeArtifactId) {
+      const artifact = artifacts.find(a => a.id === activeArtifactId)
       if (artifact) {
-        queueMicrotask(() => setContent(''))
+        setContent('加载中…')
         apiClient.getArtifactContent(artifact).then(data =>
           setContent(typeof data === 'string' ? data : JSON.stringify(data, null, 2))
         )
       }
     }
-  }, [selectedArtifactId, artifacts, isCodeCheckpoint])
+  }, [activeArtifactId, artifacts])
 
-  const currentStageIndex = Math.max(...requiredStages.map(k => STAGES.findIndex(s => s.key === k)).filter(i => i >= 0))
-  const validRetryStages = STAGES.slice(0, currentStageIndex + 1)
-  const reviewFiles = codeReview?.files ?? []
-  const selectedReviewPath = reviewFiles.some(f => f.path === activeReviewFile)
-    ? activeReviewFile
-    : reviewFiles[0]?.path ?? null
-  const patchOk = codeReview?.patch_applied_to_workspace === true
-  const reviewedCount = reviewFiles.filter(f => fileDecisions[f.path]?.decision === 'approved').length
-  const rejectedFiles = reviewFiles.filter(f => fileDecisions[f.path]?.decision === 'rejected')
-  const pendingFiles = reviewFiles.filter(f => !fileDecisions[f.path] || fileDecisions[f.path].decision === 'pending')
-  const canApproveCode = !isCodeCheckpoint || (patchOk && reviewFiles.length > 0 && rejectedFiles.length === 0 && pendingFiles.length === 0)
-  const generatedRejectReason = [
-    ...(!patchOk && isCodeCheckpoint ? [`Patch 应用失败：${codeReview?.workspace_apply_error || 'unknown error'}`] : []),
-    ...rejectedFiles.map(f => {
-      const note = fileDecisions[f.path]?.note
-      return `${f.path} 被拒绝${note ? `：${note}` : ''}`
-    }),
-  ].join('\n')
-
-  const setDecision = (file: CodeReviewFile, decision: 'pending' | 'approved' | 'rejected') => {
-    setFileDecisions(prev => ({
-      ...prev,
-      [file.path]: {
-        decision,
-        note: prev[file.path]?.note ?? '',
-      },
-    }))
-  }
-
-  const setDecisionNote = (file: CodeReviewFile, note: string) => {
-    setFileDecisions(prev => ({
-      ...prev,
-      [file.path]: {
-        decision: prev[file.path]?.decision ?? 'pending',
-        note,
-      },
-    }))
-  }
-
-  const submitReject = () => {
-    const finalReason = reason.trim() || generatedRejectReason
-    if (!finalReason.trim()) return
-    reject.mutate({ id: checkpoint.id, decided_by: '人工审核', reason: finalReason, retry_stage_key: retryStage })
-  }
-
-  const approveLabel = isDeliveryCheckpoint ? '确认发布 Git 变更' : '批准并继续'
-  const title = isCodeCheckpoint ? '代码审核' : isDeliveryCheckpoint ? '交付确认' : '方案审核'
-  const subtitle = isDeliveryCheckpoint
-    ? '确认后会创建分支、提交代码，并在可用时发起 draft PR/MR'
-    : isCodeCheckpoint
-      ? '逐文件审查 diff 和生成后的代码，再决定是否继续'
-      : '请仔细审查左侧产物后作出决策'
+  const lastStageIndex = Math.max(...requiredStages.map(k => STAGES.findIndex(s => s.key === k)).filter(i => i >= 0))
+  const validRetryStages = STAGES.slice(0, Math.max(lastStageIndex, 0) + 1)
+  const activeArtifact = artifacts.find(a => a.id === activeArtifactId)
+  const accentColor = isIntervention ? '#B45309' : '#1D4ED8'
+  const accentBg = isIntervention ? 'rgba(245,158,11,0.10)' : 'rgba(59,130,246,0.08)'
+  const accentBorder = isIntervention ? 'rgba(245,158,11,0.28)' : 'rgba(59,130,246,0.20)'
+  const ApproveIcon = isIntervention ? FastForward : Check
 
   return (
     <AnimatePresence>
@@ -113,301 +134,451 @@ export function CheckpointModal({ checkpoint, artifacts }: CheckpointModalProps)
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex"
-        style={{ background: 'rgba(3,7,18,0.85)', backdropFilter: 'blur(24px)' }}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          display: 'flex',
+          background: 'rgba(15, 23, 42, 0.32)',
+          backdropFilter: 'saturate(180%) blur(14px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(14px)',
+        }}
       >
-        <div className="absolute top-[-10%] left-[10%] w-[400px] h-[400px] rounded-full opacity-[0.08] pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #f59e0b 0%, transparent 70%)' }} />
-        <div className="absolute bottom-[-5%] right-[5%] w-[350px] h-[350px] rounded-full opacity-[0.06] pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #3370ff 0%, transparent 70%)' }} />
-
-        {/* Left: code viewer */}
-        <div className="w-3/5 flex flex-col"
-          style={{
-            background: '#0d1117',
-            borderRight: '1px solid rgba(255,255,255,0.06)',
+        {/* ─── Left: artifact viewer ─── */}
+        <div style={{
+          width: '60%', display: 'flex', flexDirection: 'column',
+          background: 'white', borderRight: '1px solid var(--c-line)',
+          boxShadow: '4px 0 24px rgba(15,23,42,0.06)',
+        }}>
+          {/* Tab bar */}
+          <div style={{
+            height: 46, flexShrink: 0,
+            display: 'flex', alignItems: 'flex-end',
+            padding: '0 12px', gap: 4,
+            background: 'var(--c-ink-50)',
+            borderBottom: '1px solid var(--c-line)',
+            overflowX: 'auto',
           }}>
-          {!isCodeCheckpoint && (
-            <div className="h-14 shrink-0 flex items-end px-2 gap-0.5 overflow-x-auto"
-              style={{ background: '#161b22', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              {relevantArtifacts.map(a => (
+            {relevantArtifacts.map(a => {
+              const active = activeArtifactId === a.id
+              return (
                 <button
                   key={a.id}
                   onClick={() => setActiveArtifactId(a.id)}
-                  className={`px-4 py-2 text-xs font-mono transition-all border-t-2 rounded-t-md whitespace-nowrap ${
-                    selectedArtifactId === a.id
-                      ? 'bg-[#0d1117] text-white border-[#3370ff]'
-                      : 'bg-transparent text-slate-500 border-transparent hover:text-slate-300 hover:bg-white/5'
-                  }`}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 12, fontFamily: 'inherit',
+                    background: active ? 'white' : 'transparent',
+                    color: active ? 'var(--c-ink-900)' : 'var(--c-ink-500)',
+                    border: 'none',
+                    borderTop: active ? `2px solid ${accentColor}` : '2px solid transparent',
+                    borderRadius: '8px 8px 0 0',
+                    fontWeight: active ? 500 : 400,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'background 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'white' }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}
                 >
-                  <span className="flex flex-col items-start leading-tight">
-                    <span>{a.filename}</span>
-                    <span className="text-[9px] opacity-55">{artifactFolder(a.run_id)}</span>
-                  </span>
+                  {artifactLabel(a.filename)}
                 </button>
-              ))}
-              {relevantArtifacts.length === 0 && (
-                <span className="px-4 py-2 text-xs text-slate-600 font-mono">暂无产物</span>
-              )}
-            </div>
-          )}
+              )
+            })}
+            {relevantArtifacts.length === 0 && (
+              <span style={{ padding: '8px 14px', fontSize: 12, color: 'var(--c-ink-400)' }}>
+                暂无关联产物
+              </span>
+            )}
+          </div>
 
-          {/* Code viewer */}
-          <div className="flex-1 overflow-auto" style={{ background: '#0d1117' }}>
-            {isCodeCheckpoint ? (
-              <DiffFileExplorer
-                files={reviewFiles.map(file => ({
-                  path: file.path,
-                  action: file.action,
-                  diff: file.diff,
-                  additions: file.additions,
-                  deletions: file.deletions,
-                  generated_content: file.generated_content,
-                }))}
-                selectedPath={selectedReviewPath}
-                onSelectPath={setActiveReviewFile}
-              />
+          {/* Content viewer */}
+          <div style={{ flex: 1, overflow: 'auto', background: 'white' }}>
+            {activeArtifact ? (
+              <ArtifactContentView filename={activeArtifact.filename} content={content} variant="light" />
             ) : (
-              <div className="min-h-full">
-                {selectedArtifact && (
-                  <div className="sticky top-0 z-10 px-4 py-2 text-[11px] font-mono"
-                    style={{
-                      background: '#0d1117',
-                      borderBottom: '1px solid rgba(255,255,255,0.05)',
-                      color: 'rgba(148,163,184,0.75)',
-                    }}>
-                    artifact folder: <span className="text-slate-200">{artifactFolder(selectedArtifact.run_id)}</span>
-                  </div>
-                )}
-                {selectedArtifact?.filename.endsWith('.patch') ? (
-                  <DiffFileExplorer text={content || '加载中...'} showFileMode={false} />
-                ) : (
-                  <pre
-                    className="text-xs font-mono text-slate-300 p-4 m-0 whitespace-pre-wrap break-words leading-5 min-h-full"
-                    style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}
-                  >
-                    {content || '加载中...'}
-                  </pre>
-                )}
+              <div style={{ padding: 28, fontSize: 13, color: 'var(--c-ink-400)' }}>
+                {isIntervention
+                  ? '请阅读右侧失败摘要后再决定。'
+                  : '暂无可审阅的产物。'}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right: decision panel */}
-        <div className="w-2/5 flex flex-col p-7 overflow-y-auto"
-          style={{
-            background: 'linear-gradient(180deg, rgba(10,15,28,0.98) 0%, rgba(3,7,18,0.98) 100%)',
-          }}>
-          <div className="flex items-start gap-3 mb-7">
-            <div className="p-2.5 rounded-xl shrink-0 mt-0.5"
-              style={{
-                background: 'rgba(245,158,11,0.12)',
-                border: '1px solid rgba(245,158,11,0.3)',
-                boxShadow: '0 0 16px rgba(245,158,11,0.15)',
-              }}>
-              <AlertTriangle className="w-5 h-5 text-[#f59e0b]" />
+        {/* ─── Right: decision panel ─── */}
+        <div style={{
+          width: '40%', display: 'flex', flexDirection: 'column',
+          padding: '28px 32px', overflowY: 'auto',
+          background: 'linear-gradient(180deg, white 0%, var(--c-ink-50) 100%)',
+        }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 24 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+              display: 'grid', placeItems: 'center',
+              background: accentBg,
+              border: `1px solid ${accentBorder}`,
+            }}>
+              <AlertTriangle size={18} color={accentColor} strokeWidth={2} />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-white leading-tight">
-                {title}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 className="display" style={{
+                fontSize: 18, fontWeight: 700, color: 'var(--c-ink-900)',
+                margin: 0, letterSpacing: '-0.01em', lineHeight: 1.25,
+              }}>
+                {cpMeta.title}
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                检查点 #{checkpoint.checkpoint_number} · {checkpoint.label}
+              <p style={{
+                fontSize: 12, color: 'var(--c-ink-500)', margin: '4px 0 0',
+                lineHeight: 1.5,
+              }}>
+                {cpMeta.subtitle}
               </p>
-              <p className="text-[11px] text-slate-600 mt-1">
-                {subtitle}
-              </p>
+              <span className="mono" style={{
+                display: 'inline-block', marginTop: 8,
+                padding: '2px 8px', fontSize: 10.5,
+                background: 'var(--c-ink-100)', color: 'var(--c-ink-600)',
+                borderRadius: 999, letterSpacing: '0.04em',
+              }}>
+                #{checkpoint.checkpoint_number} · {checkpoint.label}
+              </span>
             </div>
           </div>
 
-          {isCodeCheckpoint && (
-            <div className="rounded-2xl p-4 mb-5 space-y-3"
-              style={{
-                background: 'rgba(255,255,255,0.035)',
-                border: '1px solid rgba(255,255,255,0.08)',
+          {/* Failure context for intervention checkpoints */}
+          {isIntervention && checkpoint.decision_reason && (
+            <div style={{
+              padding: '12px 14px', marginBottom: 20,
+              background: 'rgba(245,158,11,0.06)',
+              border: '1px solid rgba(245,158,11,0.20)',
+              borderRadius: 10,
+            }}>
+              <div style={{
+                fontSize: 10, fontWeight: 600, color: '#92400E',
+                textTransform: 'uppercase', letterSpacing: '0.08em',
+                marginBottom: 6,
               }}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">代码变更</span>
-                <span className="text-xs text-slate-500">{reviewedCount}/{reviewFiles.length} approved</span>
+                失败摘要
               </div>
-              <div className="rounded-xl px-3 py-2 space-y-1"
-                style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                <div className="flex items-center justify-between gap-3 text-[10px] font-mono">
-                  <span className="text-slate-500">artifact folder</span>
-                  <span className="text-slate-300 truncate" title={artifactFolder(checkpoint.run_id)}>
-                    {artifactFolder(checkpoint.run_id)}
-                  </span>
-                </div>
-                {Object.entries(codeReview?.source_artifacts ?? {}).map(([name, id]) => (
-                  <div key={name} className="flex items-center justify-between gap-3 text-[10px] font-mono">
-                    <span className="text-slate-500 truncate">{name}</span>
-                    <span className="text-slate-300 truncate" title={id}>db id:{id || 'none'}</span>
-                  </div>
-                ))}
-              </div>
-              {patchOk ? (
-                <div className="flex items-start gap-2 text-xs text-emerald-300">
-                  <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>Patch 已成功应用到隔离 workspace。</span>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 text-xs text-red-300">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{codeReview?.workspace_apply_error || 'Patch 未成功应用，不能批准。'}</span>
-                </div>
-              )}
-              <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                {reviewFiles.map(file => {
-                  const decision = fileDecisions[file.path]?.decision ?? 'pending'
-                  return (
-                    <div key={file.path} className="rounded-xl p-3"
-                      style={{
-                        background: selectedReviewPath === file.path ? 'rgba(51,112,255,0.11)' : 'rgba(0,0,0,0.22)',
-                        border: `1px solid ${
-                          decision === 'approved'
-                            ? 'rgba(16,185,129,0.35)'
-                            : decision === 'rejected'
-                              ? 'rgba(239,68,68,0.35)'
-                              : 'rgba(255,255,255,0.07)'
-                        }`,
-                      }}>
-                      <button
-                        type="button"
-                        onClick={() => setActiveReviewFile(file.path)}
-                        className="w-full text-left text-xs font-mono text-slate-200 hover:text-white truncate"
-                      >
-                        {file.path}
-                      </button>
-                      <div className="flex gap-1.5 mt-2">
-                        {(['approved', 'rejected', 'pending'] as const).map(choice => (
-                          <button
-                            key={choice}
-                            type="button"
-                            onClick={() => setDecision(file, choice)}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] transition ${
-                              decision === choice
-                                ? 'bg-white/14 text-white'
-                                : 'bg-white/5 text-slate-500 hover:text-slate-300'
-                            }`}
-                          >
-                            {choice === 'approved' ? 'Approve' : choice === 'rejected' ? 'Reject' : 'Pending'}
-                          </button>
-                        ))}
-                      </div>
-                      {decision === 'rejected' && (
-                        <textarea
-                          value={fileDecisions[file.path]?.note ?? ''}
-                          onChange={e => setDecisionNote(file, e.target.value)}
-                          placeholder="这个文件需要怎么改？"
-                          className="mt-2 w-full h-16 rounded-lg px-2.5 py-2 text-xs text-white placeholder-slate-700 resize-none"
-                          style={{
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(255,255,255,0.07)',
-                            outline: 'none',
-                          }}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+              <pre className="mono" style={{
+                margin: 0, fontSize: 11.5, lineHeight: 1.55,
+                color: 'var(--c-ink-700)', whiteSpace: 'pre-wrap',
+                maxHeight: 180, overflowY: 'auto', wordBreak: 'break-word',
+              }}>
+                {checkpoint.decision_reason}
+              </pre>
             </div>
           )}
 
+          {/* Provider / model switcher (optional) */}
+          <ModelSwitcher
+            provider={nextProvider}
+            model={nextModel}
+            customModel={customModel}
+            onProvider={setNextProvider}
+            onModel={setNextModel}
+            onCustomModel={setCustomModel}
+            accentColor={accentColor}
+          />
+
+          {/* Approve button */}
           <button
             onClick={() => approve.mutate({
               id: checkpoint.id,
-              decided_by: '人工审核',
-              reason: isDeliveryCheckpoint ? '确认发布 Git 变更' : '方案通过',
+              decided_by: 'human-review',
+              reason: 'Approved',
+              next_provider: nextProvider,
+              next_model: resolveModel(nextProvider, nextModel, customModel),
             })}
-            disabled={approve.isPending || !canApproveCode}
-            className="btn-approve w-full py-4 rounded-2xl font-semibold text-white flex items-center justify-center gap-2.5 disabled:opacity-50 mb-5"
+            disabled={approve.isPending}
+            style={{
+              width: '100%', padding: '14px 18px', marginBottom: 18,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              background: isIntervention
+                ? 'linear-gradient(135deg, #F59E0B, #D97706)'
+                : 'linear-gradient(135deg, #2563EB, #1D4ED8)',
+              color: 'white', border: 'none', borderRadius: 12,
+              fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
+              cursor: approve.isPending ? 'wait' : 'pointer',
+              opacity: approve.isPending ? 0.55 : 1,
+              boxShadow: isIntervention
+                ? '0 6px 20px rgba(217,119,6,0.32)'
+                : '0 6px 20px rgba(29,78,216,0.28)',
+              transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (approve.isPending) return
+              e.currentTarget.style.transform = 'translateY(-1px)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+            }}
           >
-            <Check className="w-5 h-5" strokeWidth={2.5} />
-            {approveLabel}
+            <ApproveIcon size={16} strokeWidth={2.4} />
+            {cpMeta.approveText}
           </button>
-          {isCodeCheckpoint && !canApproveCode && (
-            <p className="text-[11px] text-slate-500 -mt-3 mb-5">
-              需要所有文件都 Approve，并且 patch 成功应用到隔离 workspace，才可以继续。
-            </p>
-          )}
 
-          <div className="relative flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
-            <span className="text-[10px] text-slate-600 uppercase tracking-widest shrink-0">或拒绝</span>
-            <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+          {/* Divider */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+          }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--c-line)' }} />
+            <span style={{
+              fontSize: 10, color: 'var(--c-ink-400)',
+              textTransform: 'uppercase', letterSpacing: '0.12em',
+            }}>
+              或{isIntervention ? '让 AI 重试' : '驳回'}
+            </span>
+            <div style={{ flex: 1, height: 1, background: 'var(--c-line)' }} />
           </div>
 
-          <div className="rounded-2xl p-5 space-y-4"
-            style={{
-              background: 'rgba(239,68,68,0.04)',
-              border: '1px solid rgba(239,68,68,0.12)',
-            }}>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">拒绝原因</label>
+          {/* Reject card */}
+          <div style={{
+            padding: 18, borderRadius: 14,
+            background: 'white',
+            border: '1px solid var(--c-line-2)',
+            boxShadow: 'var(--c-shadow-sm)',
+            display: 'flex', flexDirection: 'column', gap: 14,
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--c-ink-600)',
+                textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                {isIntervention ? '修复指引（必填）' : '驳回原因（必填）'}
+              </label>
               <textarea
                 value={reason}
                 onChange={e => setReason(e.target.value)}
-                placeholder="说明需要修改的内容..."
-                className="w-full h-24 rounded-xl px-3.5 py-3 text-sm text-white placeholder-slate-700 resize-none transition-all"
+                placeholder={
+                  isIntervention
+                    ? '描述需要 AI 重点关注的问题、约束或修复方向…'
+                    : '说明哪里需要修改、AI 需要重点关注什么…'
+                }
                 style={{
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid rgba(255,255,255,0.07)',
-                  outline: 'none',
+                  width: '100%', minHeight: 90, padding: '11px 13px',
+                  background: 'var(--c-ink-50)',
+                  border: '1px solid var(--c-line-2)',
+                  borderRadius: 10,
+                  fontFamily: 'inherit', fontSize: 13,
+                  color: 'var(--c-ink-900)', resize: 'vertical',
+                  outline: 'none', boxSizing: 'border-box',
+                  transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
                 }}
-                onFocus={e => {
-                  e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(239,68,68,0.08)'
+                onFocus={(e) => {
+                  e.currentTarget.style.background = 'white'
+                  e.currentTarget.style.borderColor = '#3B82F6'
+                  e.currentTarget.style.boxShadow = '0 0 0 4px rgba(59,130,246,0.08)'
                 }}
-                onBlur={e => {
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
+                onBlur={(e) => {
+                  e.currentTarget.style.background = 'var(--c-ink-50)'
+                  e.currentTarget.style.borderColor = 'var(--c-line-2)'
                   e.currentTarget.style.boxShadow = 'none'
                 }}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <RotateCcw className="w-3 h-3" />
-                回退节点
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{
+                fontSize: 11, fontWeight: 600, color: 'var(--c-ink-600)',
+                textTransform: 'uppercase', letterSpacing: '0.08em',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}>
+                <RotateCcw size={11} strokeWidth={2} />
+                重试起点
               </label>
-              <div className="relative">
+              <div style={{ position: 'relative' }}>
                 <select
                   value={retryStage}
                   onChange={e => setRetryStage(e.target.value)}
-                  className="w-full rounded-xl px-3.5 py-3 text-sm text-white appearance-none cursor-pointer"
                   style={{
-                    background: 'rgba(0,0,0,0.3)',
-                    border: '1px solid rgba(255,255,255,0.07)',
+                    width: '100%', padding: '10px 36px 10px 13px',
+                    background: 'var(--c-ink-50)',
+                    border: '1px solid var(--c-line-2)',
+                    borderRadius: 10,
+                    fontFamily: 'inherit', fontSize: 13,
+                    color: 'var(--c-ink-900)',
+                    appearance: 'none', cursor: 'pointer',
                     outline: 'none',
                   }}
                 >
                   {validRetryStages.map(s => (
-                    <option key={s.key} value={s.key} style={{ background: '#1e293b' }}>
-                      {s.label}
-                    </option>
+                    <option key={s.key} value={s.key}>{s.label}</option>
                   ))}
                 </select>
-                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
+                <svg
+                  width={12} height={12} viewBox="0 0 24 24"
+                  style={{
+                    position: 'absolute', right: 13, top: '50%',
+                    transform: 'translateY(-50%)', pointerEvents: 'none',
+                    color: 'var(--c-ink-400)',
+                  }}
+                  fill="none" stroke="currentColor" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
               </div>
             </div>
 
             <button
-              onClick={submitReject}
-              disabled={!(reason.trim() || generatedRejectReason) || reject.isPending}
-              className="btn-reject w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => reject.mutate({
+                id: checkpoint.id,
+                decided_by: 'human-review',
+                reason,
+                retry_stage_key: retryStage,
+                next_provider: nextProvider,
+                next_model: resolveModel(nextProvider, nextModel, customModel),
+              })}
+              disabled={!reason.trim() || reject.isPending}
+              style={{
+                width: '100%', padding: '11px 14px',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                background: reason.trim() ? '#FEF2F2' : 'var(--c-ink-100)',
+                color: reason.trim() ? '#B91C1C' : 'var(--c-ink-400)',
+                border: `1px solid ${reason.trim() ? '#FECACA' : 'var(--c-line-2)'}`,
+                borderRadius: 10,
+                fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+                cursor: reason.trim() && !reject.isPending ? 'pointer' : 'not-allowed',
+                opacity: reject.isPending ? 0.55 : 1,
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!reason.trim() || reject.isPending) return
+                e.currentTarget.style.background = '#FEE2E2'
+              }}
+              onMouseLeave={(e) => {
+                if (!reason.trim() || reject.isPending) return
+                e.currentTarget.style.background = '#FEF2F2'
+              }}
             >
-              <X className="w-4 h-4" />
-              拒绝并重试
+              <X size={13} strokeWidth={2.2} />
+              {cpMeta.rejectText}
             </button>
           </div>
         </div>
       </motion.div>
     </AnimatePresence>
+  )
+}
+
+function resolveModel(provider: string, picked: string, custom: string): string {
+  // Volcano / unknown providers: use the free-text input.
+  if (provider === 'volcano') return custom.trim()
+  // OpenAI: prefer the dropdown pick; fall back to custom text if user typed one.
+  return picked || custom.trim()
+}
+
+function ModelSwitcher({
+  provider, model, customModel,
+  onProvider, onModel, onCustomModel,
+  accentColor,
+}: {
+  provider: string
+  model: string
+  customModel: string
+  onProvider: (v: string) => void
+  onModel: (v: string) => void
+  onCustomModel: (v: string) => void
+  accentColor: string
+}) {
+  const showOpenAIPicker = provider === 'openai'
+  const showCustomInput = provider === 'volcano' || (provider === 'openai' && !model)
+
+  return (
+    <div style={{
+      padding: 14, marginBottom: 16,
+      borderRadius: 12,
+      background: 'var(--c-ink-50)',
+      border: '1px solid var(--c-line-2)',
+      display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      <label style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        fontSize: 11, fontWeight: 600, color: 'var(--c-ink-600)',
+        textTransform: 'uppercase', letterSpacing: '0.08em',
+      }}>
+        <Cpu size={11} strokeWidth={2} />
+        切换 Provider / Model
+        <span style={{
+          marginLeft: 'auto', fontSize: 10, fontWeight: 400,
+          color: 'var(--c-ink-400)', textTransform: 'none', letterSpacing: 0,
+        }}>
+          可选 · 仅本次决定后生效
+        </span>
+      </label>
+
+      {/* Provider buttons */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {PROVIDER_OPTIONS.map(opt => {
+          const active = provider === opt.value
+          return (
+            <button
+              key={opt.value || 'keep'}
+              type="button"
+              onClick={() => onProvider(opt.value)}
+              style={{
+                flex: 1, padding: '7px 10px',
+                fontSize: 11.5, fontFamily: 'inherit',
+                background: active ? 'white' : 'transparent',
+                color: active ? accentColor : 'var(--c-ink-600)',
+                border: `1px solid ${active ? accentColor : 'var(--c-line-2)'}`,
+                borderRadius: 8,
+                cursor: 'pointer', fontWeight: active ? 600 : 500,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* OpenAI model buttons */}
+      {showOpenAIPicker && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {OPENAI_MODELS.map(opt => {
+            const active = model === opt.value
+            return (
+              <button
+                key={opt.value || 'keep'}
+                type="button"
+                onClick={() => onModel(opt.value)}
+                style={{
+                  flex: '1 1 0', minWidth: 90,
+                  padding: '6px 10px',
+                  fontSize: 11, fontFamily: 'inherit',
+                  background: active ? 'white' : 'transparent',
+                  color: active ? accentColor : 'var(--c-ink-600)',
+                  border: `1px solid ${active ? accentColor : 'var(--c-line-2)'}`,
+                  borderRadius: 8,
+                  cursor: 'pointer', fontWeight: active ? 600 : 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Free-text custom model input (fallback for volcano or unrecognized) */}
+      {showCustomInput && provider && (
+        <input
+          type="text"
+          value={customModel}
+          onChange={(e) => onCustomModel(e.target.value)}
+          placeholder={provider === 'volcano' ? '例如 doubao-pro' : '自定义模型名（可选）'}
+          style={{
+            width: '100%', padding: '8px 11px',
+            fontSize: 12, fontFamily: "'JetBrains Mono', monospace",
+            background: 'white',
+            border: '1px solid var(--c-line-2)',
+            borderRadius: 8,
+            color: 'var(--c-ink-900)', outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      )}
+    </div>
   )
 }

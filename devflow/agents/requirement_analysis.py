@@ -46,6 +46,11 @@ def _object_bullets(value: Any) -> str:
 
 
 def render_requirement_prd(spec: dict[str, Any]) -> str:
+    """Render requirement_spec.json into a human-readable PRD markdown.
+
+    Used to emit ``requirement_spec.prd.md`` so users see a polished narrative
+    in the stage view while downstream agents keep consuming the structured JSON.
+    """
     title = str(spec.get("title") or "需求规格").strip()
     summary = str(spec.get("summary") or "未提供摘要。").strip()
     task_type = str(spec.get("task_type") or "未指定").strip()
@@ -119,7 +124,7 @@ class RequirementAnalysisAgent(BaseAgent):
         return True
 
     def max_tokens(self) -> int | None:
-        return 3500
+        return 12000
 
     def build_system_prompt(self, ctx: AgentContext) -> str:
         return prompts.SYSTEM

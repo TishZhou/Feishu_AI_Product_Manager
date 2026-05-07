@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from devflow.db.models import Pipeline
     from devflow.providers.router import ProviderRouter, ToolDispatcher
 
+DEFAULT_JSON_MAX_TOKENS = 12_000
+
 
 @dataclass
 class AgentContext:
@@ -88,20 +90,52 @@ class BaseAgent(ABC):
         user_prompt = self.build_user_prompt(ctx)
         tools = self.get_tools()
 
+        provider = self.provider_override(ctx) or ctx.pipeline.provider
+        model = self.model_override(ctx) or ctx.pipeline.model or None
+
         raw_response = await ctx.provider_router.chat(
             system=system_prompt,
             user=user_prompt,
             tools=tools or None,
-            model=ctx.pipeline.model or None,
-            provider=ctx.pipeline.provider,
+            model=model,
+            provider=provider,
             tool_dispatcher=dispatcher if tools else None,
             json_mode=self.json_mode(),
-            max_tokens=self.max_tokens(),
+            max_tokens=self._resolved_max_tokens(),
             max_tool_rounds=self.max_tool_rounds(),
             cache_key=f"devflow:{ctx.stage_key}",
+            run_id=ctx.run_id,
+            stage_key=ctx.stage_key,
         )
 
-        return self.parse_response(raw_response, ctx)
+        result = self.parse_response(raw_response, ctx)
+        if result.success or not self._should_repair_json_result(result):
+            return result
+
+        repaired_response = await ctx.provider_router.chat(
+            system=(
+                "You repair malformed JSON outputs. Return only one complete, valid JSON object. "
+                "Do not include markdown, code fences, comments, or explanatory text."
+            ),
+            user=(
+                "The previous model response could not be parsed as JSON. "
+                "Repair it into one complete JSON object without changing the intended content.\n\n"
+                f"Parse error:\n{result.error}\n\n"
+                f"Malformed response:\n{raw_response}"
+            ),
+            tools=None,
+            model=model,
+            provider=provider,
+            tool_dispatcher=None,
+            json_mode=True,
+            max_tokens=max(self._resolved_max_tokens() or 0, DEFAULT_JSON_MAX_TOKENS),
+            max_tool_rounds=1,
+            cache_key=f"devflow:{ctx.stage_key}:json-repair",
+            run_id=ctx.run_id,
+            stage_key=ctx.stage_key,
+        )
+        repaired_result = self.parse_response(repaired_response, ctx)
+        return repaired_result if repaired_result.success else result
 
     @abstractmethod
     def build_system_prompt(self, ctx: AgentContext) -> str: ...
@@ -117,6 +151,20 @@ class BaseAgent(ABC):
 
     def max_tokens(self) -> int | None:
         return None
+
+    def provider_override(self, ctx: AgentContext) -> str | None:
+        """Per-stage provider override. Return None to inherit pipeline.provider."""
+        return None
+
+    def model_override(self, ctx: AgentContext) -> str | None:
+        """Per-stage model override. Return None to inherit pipeline.model."""
+        return None
+
+    def _resolved_max_tokens(self) -> int | None:
+        configured = self.max_tokens()
+        if configured is not None:
+            return configured
+        return DEFAULT_JSON_MAX_TOKENS if self.json_mode() else None
 
     def max_tool_rounds(self) -> int:
         return 25
@@ -166,3 +214,6 @@ class BaseAgent(ABC):
 
     def _fail(self, ctx: AgentContext, error: str, raw: str = "") -> AgentResult:
         return AgentResult(stage_key=ctx.stage_key, success=False, error=error, raw_llm_response=raw)
+
+    def _should_repair_json_result(self, result: AgentResult) -> bool:
+        return self.json_mode() and bool(result.error and result.error.startswith("Invalid JSON from LLM"))

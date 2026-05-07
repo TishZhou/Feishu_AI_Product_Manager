@@ -25,7 +25,9 @@ if TYPE_CHECKING:
 _MAX_TEST_REPAIR_ATTEMPTS = 2
 _MAX_REVIEW_REPAIR_ATTEMPTS = 2
 _HUMAN_TEST_RETRY_BUDGET = 2  # extra auto-attempts granted per human intervention
+_HUMAN_REVIEW_RETRY_BUDGET = 2
 _TEST_INTERVENTION_CP_BASE = 1000  # checkpoint_number base for test-failure interventions
+_REVIEW_INTERVENTION_CP_BASE = 2000  # checkpoint_number base for review-blocker interventions
 
 
 def _now() -> datetime:
@@ -49,6 +51,7 @@ class PipelineOrchestrator:
         self._provider_overrides: dict[str, dict[str, str]] = {}
         # Counts how many human interventions on test failures have been raised per run
         self._test_intervention_counter: dict[str, int] = {}
+        self._review_intervention_counter: dict[str, int] = {}
 
     # ── Public control methods (called by API handlers) ───────────────────────
 
@@ -107,13 +110,14 @@ class PipelineOrchestrator:
         self._cp_decisions.pop(run_id, None)
         self._provider_overrides.pop(run_id, None)
         self._test_intervention_counter.pop(run_id, None)
+        self._review_intervention_counter.pop(run_id, None)
 
     # ── Main execution loop ────────────────────────────────────────────────────
 
-    async def run_pipeline(self, run_id: str) -> None:
+    async def run_pipeline(self, run_id: str, resume_from_stage: str | None = None) -> None:
         t0 = _now()
         try:
-            await self._run_pipeline_inner(run_id)
+            await self._run_pipeline_inner(run_id, resume_from_stage=resume_from_stage)
         except Exception as e:
             logger.exception("[RUN %s] ✗ unhandled crash: %s", run_id[:8], e)
             await self._set_run_status(run_id, RunState.FAILED, error=str(e))
@@ -122,7 +126,7 @@ class PipelineOrchestrator:
             total = (_now() - t0).total_seconds()
             logger.info("[RUN %s] ═══ pipeline finished in %.0fs ═══", run_id[:8], total)
 
-    async def _run_pipeline_inner(self, run_id: str) -> None:
+    async def _run_pipeline_inner(self, run_id: str, resume_from_stage: str | None = None) -> None:
         from types import SimpleNamespace
         from devflow.db.models import Pipeline as PipelineModel
 
@@ -155,6 +159,7 @@ class PipelineOrchestrator:
                 previous_review_report="",
                 preserved_test_files=[],
                 extra_test_attempts=0,
+                extra_review_attempts=0,
             )
 
         logger.info(
@@ -168,7 +173,12 @@ class PipelineOrchestrator:
         await self._set_run_status(run_id, RunState.RUNNING)
 
         # Determine start stage (support retry from mid-pipeline)
-        start_key = await self._get_resume_stage(run_id)
+        if resume_from_stage and resume_from_stage in STAGE_BY_KEY:
+            start_key = resume_from_stage
+            logger.info("[RUN %s] resuming from explicit stage=%s (user retry)",
+                        run_id[:8], start_key)
+        else:
+            start_key = await self._get_resume_stage(run_id)
         stage_list = stages_from(start_key)
         if STAGE_BY_KEY[start_key].index > STAGE_BY_KEY["code_generation"].index:
             workspace_path = self._load_valid_execution_workspace(artifact_store)
@@ -256,6 +266,41 @@ class PipelineOrchestrator:
             if not result.success:
                 logger.error("[RUN %s] ✗ stage=%s  agent_error=%s", run_id[:8], stage_def.key, result.error)
                 await self._fail_stage(stage_result_id, result.error or "Agent failed", duration)
+
+                # If we're inside an auto-retry loop (review BLOCKERs / test failures),
+                # escalate to a human intervention checkpoint instead of killing the
+                # run. The user can switch model/provider, give guidance, or abandon.
+                if self._should_escalate_failure_to_intervention(pipeline, stage_def.key):
+                    fail_ctx = (
+                        f"{stage_def.key} 在自动重试中失败：\n{result.error or 'Agent returned no result'}"
+                    )
+                    decision, guidance, retry_stage = await self._await_review_intervention(
+                        run_id, attempt, fail_ctx, {}, pipeline,
+                    )
+                    if decision == "approved":
+                        # User chose to abandon — record as failed and stop.
+                        logger.info("[RUN %s] 🛑 user abandoned run after stage=%s failure", run_id[:8], stage_def.key)
+                        await self._set_run_status(run_id, RunState.FAILED, error=fail_ctx)
+                        self.cleanup(run_id)
+                        return
+                    # Reject = retry from chosen stage with guidance
+                    pipeline.review_blocker_context = (
+                        fail_ctx + (f"\n\nHuman guidance:\n{guidance}" if guidance.strip() else "")
+                    )
+                    pipeline.extra_review_attempts = (
+                        getattr(pipeline, "extra_review_attempts", 0) + _HUMAN_REVIEW_RETRY_BUDGET
+                    )
+                    pipeline.repo_path = pipeline.source_repo_path
+                    logger.info(
+                        "[RUN %s] ↺  human-guided retry after stage=%s failure → %s",
+                        run_id[:8], stage_def.key, retry_stage,
+                    )
+                    await self._reject_stages_from(run_id, retry_stage)
+                    stage_list = stages_from(retry_stage)
+                    i = 0
+                    await self._set_run_status(run_id, RunState.RUNNING)
+                    continue
+
                 await self._set_run_status(run_id, RunState.FAILED, error=result.error or "")
                 self.cleanup(run_id)
                 return
@@ -388,13 +433,14 @@ class PipelineOrchestrator:
                 review_json = self._load_optional_artifact(artifact_store, "review_report.json")
                 if self._has_review_blockers(review_json):
                     blocker_ctx = self._build_review_blocker_context(review_json)
-                    if attempt <= _MAX_REVIEW_REPAIR_ATTEMPTS:
+                    auto_limit = _MAX_REVIEW_REPAIR_ATTEMPTS + getattr(pipeline, "extra_review_attempts", 0)
+                    if attempt <= auto_limit:
                         pipeline.review_blocker_context = blocker_ctx
                         self._capture_previous_review(artifact_store, pipeline)
                         pipeline.repo_path = pipeline.source_repo_path
                         logger.info(
-                            "[RUN %s] ✗ review BLOCKER(s) at attempt=%d — auto-retrying from code_generation",
-                            run_id[:8], attempt,
+                            "[RUN %s] ✗ review BLOCKER(s) at attempt=%d/%d — auto-retrying from code_generation",
+                            run_id[:8], attempt, auto_limit,
                         )
                         await self._fail_stage(stage_result_id, blocker_ctx, duration)
                         await self._reject_stages_from(run_id, "code_generation")
@@ -402,10 +448,39 @@ class PipelineOrchestrator:
                         i = 0
                         await self._set_run_status(run_id, RunState.RUNNING)
                         continue
-                    logger.warning(
-                        "[RUN %s] review BLOCKER(s) remain after %d attempt(s) — proceeding to checkpoint",
-                        run_id[:8], attempt,
+
+                    # Auto-retry budget exhausted — request human intervention.
+                    decision, guidance, retry_stage = await self._await_review_intervention(
+                        run_id, attempt, blocker_ctx, review_json, pipeline
                     )
+                    if decision == "approved":
+                        # SKIP: accept the BLOCKERs and continue to the regular checkpoint.
+                        # Stage was already marked succeeded above; just fall through.
+                        logger.info(
+                            "[RUN %s] ⏭  user SKIPPED review BLOCKER(s) at attempt=%d",
+                            run_id[:8], attempt,
+                        )
+                    else:
+                        # REJECT with guidance: append guidance and grant a fresh budget.
+                        pipeline.review_blocker_context = (
+                            blocker_ctx
+                            + (f"\n\nHuman guidance:\n{guidance}" if guidance.strip() else "")
+                        )
+                        pipeline.extra_review_attempts = (
+                            getattr(pipeline, "extra_review_attempts", 0) + _HUMAN_REVIEW_RETRY_BUDGET
+                        )
+                        self._capture_previous_review(artifact_store, pipeline)
+                        pipeline.repo_path = pipeline.source_repo_path
+                        logger.info(
+                            "[RUN %s] ↺  human-guided retry from %s — extra_review_attempts=+%d",
+                            run_id[:8], retry_stage, _HUMAN_REVIEW_RETRY_BUDGET,
+                        )
+                        await self._fail_stage(stage_result_id, blocker_ctx, duration)
+                        await self._reject_stages_from(run_id, retry_stage)
+                        stage_list = stages_from(retry_stage)
+                        i = 0
+                        await self._set_run_status(run_id, RunState.RUNNING)
+                        continue
 
             # ── Checkpoint check ──────────────────────────────────────────────
             if stage_def.checkpoint_after is not None:
@@ -464,7 +539,7 @@ class PipelineOrchestrator:
         """Write generated full-file snapshots to artifacts without touching the repo."""
         from devflow.artifacts.patch_materializer import materialize_patch_files
         from devflow.tools.patch_tools import apply_patch
-        from devflow.tools.workspace import create_workspace
+        from devflow.tools.workspace import create_workspace, ensure_frontend_node_modules
         try:
             patch = store.load_parsed("code_diff.patch")
             if not patch or not isinstance(patch, str):
@@ -472,6 +547,7 @@ class PipelineOrchestrator:
             manifest = materialize_patch_files(patch, repo_path, store.base_dir)
             workspace = store.base_dir / f"execution_workspace_{uuid.uuid4().hex[:8]}"
             create_workspace(Path(repo_path), workspace)
+            ensure_frontend_node_modules(workspace, Path(repo_path))
             apply_result = apply_patch(patch, str(workspace))
             manifest["execution_workspace"] = str(workspace)
             manifest["patch_applied_to_workspace"] = bool(apply_result.get("success"))
@@ -905,6 +981,85 @@ class PipelineOrchestrator:
 
         await self._set_run_status(run_id, RunState.RUNNING)
         return decision, guidance, retry_stage
+
+    async def _await_review_intervention(
+        self,
+        run_id: str,
+        attempt: int,
+        blocker_context: str,
+        review_json: object,
+        pipeline: object | None = None,
+    ) -> tuple[str, str, str]:
+        """Block the run until a human resolves persistent code-review BLOCKERs.
+
+        Mirrors :meth:`_await_test_intervention`. Returns ``(decision, guidance, retry_stage)``
+        where decision == "approved" means SKIP (accept the BLOCKERs and move on
+        to the regular code_review checkpoint).
+        """
+        self._review_intervention_counter[run_id] = (
+            self._review_intervention_counter.get(run_id, 0) + 1
+        )
+        cp_number = _REVIEW_INTERVENTION_CP_BASE + self._review_intervention_counter[run_id]
+        default_retry = "code_generation"
+
+        async with AsyncSessionLocal() as session:
+            cp = Checkpoint(
+                id=str(uuid.uuid4()),
+                run_id=run_id,
+                checkpoint_number=cp_number,
+                label="review_blocker_intervention",
+                required_stage_keys=json.dumps(["code_generation", "test_generation", "code_review"]),
+                retry_stage_key=default_retry,
+                status="waiting",
+                decision_reason=blocker_context[:4000],
+            )
+            session.add(cp)
+            await session.commit()
+            cp_id = cp.id
+
+        await self._set_run_status(run_id, RunState.WAITING_FOR_APPROVAL)
+        logger.info(
+            "[RUN %s] ⏸  REVIEW INTERVENTION cp=%d (attempt=%d) — awaiting human input",
+            run_id[:8], cp_number, attempt,
+        )
+
+        cp_event = self._get_cp_event(run_id, cp_number)
+        cp_event.clear()
+        await cp_event.wait()
+        decision = self._cp_decisions.get(run_id, {}).get(cp_number, "approved")
+        cp_event.clear()
+
+        override = self._pop_provider_override(run_id)
+        if override and pipeline is not None:
+            new_provider = override.get("provider", "").strip()
+            new_model = override.get("model", "").strip()
+            if new_provider:
+                pipeline.provider = new_provider
+                logger.info("[RUN %s] ⚙  provider switched → %s", run_id[:8], new_provider)
+            if new_model:
+                pipeline.model = new_model
+                logger.info("[RUN %s] ⚙  model switched → %s", run_id[:8], new_model)
+
+        async with AsyncSessionLocal() as session:
+            cp_row = await session.get(Checkpoint, cp_id)
+            guidance = (cp_row.decision_reason or "") if cp_row else ""
+            retry_stage = (cp_row.retry_stage_key if cp_row else "") or default_retry
+
+        # Avoid lint warning on unused parameter (kept for symmetry with test intervention).
+        _ = review_json
+        await self._set_run_status(run_id, RunState.RUNNING)
+        return decision, guidance, retry_stage
+
+    def _should_escalate_failure_to_intervention(self, pipeline: object, stage_key: str) -> bool:
+        """True when a hard stage failure should escalate to a human checkpoint
+        instead of killing the run. Only applies once we're already in an auto-
+        retry loop (a prior review/test failure has been observed)."""
+        if stage_key not in {"code_generation", "test_generation", "code_review"}:
+            return False
+        return bool(
+            getattr(pipeline, "review_blocker_context", "")
+            or getattr(pipeline, "test_failure_context", "")
+        )
 
     def _has_review_blockers(self, review_json: object) -> bool:
         if not isinstance(review_json, dict):
