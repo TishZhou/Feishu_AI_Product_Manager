@@ -161,20 +161,38 @@ def _sync_working_tree_changes(source_repo: Path, workspace: Path) -> None:
 
     git worktree add gives us committed files at HEAD. This step adds any
     un-committed changes so the workspace truly mirrors the working tree.
+
+    Uses ``-z`` for NUL-separated, **unquoted** paths so non-ASCII filenames
+    (Chinese, emoji, spaces, etc.) survive intact. Without ``-z``, git wraps
+    such paths in quotes with octal-escaped bytes, and a naive split would
+    pass that escaped string to shutil.copy2, which then silently can't find
+    the file — leaving it out of the workspace and ultimately producing a
+    bogus "deleted file" diff downstream.
     """
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
+        ["git", "status", "--porcelain", "-z"],
         cwd=source_repo,
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         return
-    for raw in result.stdout.splitlines():
+    # In -z output, entries are NUL-separated. Format per entry: "XY path"
+    # where XY is the 2-char status. Renames span two NUL-separated tokens
+    # ("R  newpath\0oldpath\0"); we only need newpath for our copy purposes,
+    # so we walk the tokens and consume one extra after R/C statuses.
+    tokens = result.stdout.split("\0")
+    i = 0
+    while i < len(tokens):
+        raw = tokens[i]
+        i += 1
         if len(raw) < 4:
             continue
         status = raw[:2].strip()
-        filepath = raw[3:].strip()
+        filepath = raw[3:]  # NB: no .strip() — filenames may have leading/trailing space
+        is_rename = status.startswith(("R", "C"))
+        if is_rename and i < len(tokens):
+            i += 1  # skip the old-path token
         if not filepath:
             continue
         parts = Path(filepath).parts
