@@ -70,7 +70,17 @@ async def get_git_status(run_id: str, session: AsyncSession = Depends(get_sessio
     if not pipeline:
         raise HTTPException(404, "Pipeline not found")
 
-    info = inspect_repo(pipeline.repo_path)
+    # Load this run's patch (if any) so inspect_repo can distinguish "dirty
+    # because delivery wrote our patch" vs "dirty because of unrelated changes".
+    artifacts_dir = _artifacts_dir_for(run_id)
+    patch_text = ""
+    for name in ("final_diff.patch", "code_diff.patch"):
+        candidate = artifacts_dir / name
+        if candidate.exists():
+            patch_text = candidate.read_text(encoding="utf-8", errors="replace")
+            break
+
+    info = inspect_repo(pipeline.repo_path, patch_text=patch_text)
     # Merge in publication state so the UI knows whether we've already pushed.
     pub_path = _artifacts_dir_for(run_id) / "git_publication.json"
     info["already_published"] = pub_path.exists()

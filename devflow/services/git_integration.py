@@ -8,13 +8,27 @@ from pathlib import Path
 from typing import Any
 
 
-def inspect_repo(repo_path: str) -> dict[str, Any]:
-    """Lightweight precheck for the git integration modal: is this a git repo?
-    Has a remote? Is the working tree clean? What's the current branch?"""
+def inspect_repo(repo_path: str, patch_text: str = "") -> dict[str, Any]:
+    """Lightweight precheck for the git integration modal.
+
+    Reports whether the repo is a git repo, has a remote, is currently clean,
+    AND — when ``patch_text`` is provided — distinguishes between two flavours
+    of "dirty":
+      * ``dirty_matches_patch``  — the dirty files are exactly the ones our
+        delivery stage just wrote into the working tree, so it's safe to commit
+      * ``dirty_unrelated``      — there are local changes outside the patch,
+        which would get mixed into our auto-commit and should be cleared first
+
+    The frontend reads ``safe_to_publish = clean OR dirty_matches_patch`` to
+    decide whether to enable the submit button.
+    """
     info: dict[str, Any] = {
         "is_git": False, "repo_path": str(Path(repo_path).resolve()),
         "current_branch": "", "remote_url": "", "remote_kind": "",
         "working_tree_clean": False, "has_gh_cli": False, "has_glab_cli": False,
+        "dirty_matches_patch": False, "dirty_unrelated": False,
+        "dirty_paths": [], "patch_paths": [],
+        "safe_to_publish": False,
         "error": "",
     }
     repo = Path(repo_path).resolve()
@@ -34,7 +48,21 @@ def inspect_repo(repo_path: str) -> dict[str, Any]:
 
     status = subprocess.run(["git", "status", "--porcelain"], cwd=info["repo_path"], capture_output=True, text=True)
     if status.returncode == 0:
-        info["working_tree_clean"] = not status.stdout.strip()
+        is_clean = not status.stdout.strip()
+        info["working_tree_clean"] = is_clean
+        if is_clean:
+            info["safe_to_publish"] = True
+        else:
+            dirty = _porcelain_paths(status.stdout)
+            info["dirty_paths"] = sorted(dirty)
+            patch_paths = set(_changed_paths_from_patch(patch_text)) if patch_text else set()
+            info["patch_paths"] = sorted(patch_paths)
+            if patch_paths and dirty and dirty.issubset(patch_paths):
+                info["dirty_matches_patch"] = True
+                info["safe_to_publish"] = True
+            else:
+                info["dirty_unrelated"] = True
+                info["safe_to_publish"] = False
 
     remote = subprocess.run(["git", "remote", "get-url", "origin"], cwd=info["repo_path"], capture_output=True, text=True)
     if remote.returncode == 0 and remote.stdout.strip():

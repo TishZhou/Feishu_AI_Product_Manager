@@ -190,6 +190,14 @@ export interface GitStatus {
   remote_url: string
   remote_kind: '' | 'github' | 'gitlab'
   working_tree_clean: boolean
+  // True when working tree is clean OR dirty files exactly match this run's patch.
+  // The submit button uses this — not working_tree_clean — to decide enable/disable.
+  safe_to_publish: boolean
+  // Diagnostic flags so the UI can explain *why* it's safe / unsafe.
+  dirty_matches_patch: boolean
+  dirty_unrelated: boolean
+  dirty_paths: string[]
+  patch_paths: string[]
   has_gh_cli: boolean
   has_glab_cli: boolean
   error: string

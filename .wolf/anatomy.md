@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T02:40:31.546Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-07T03:04:34.547Z
 > Files: 557 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -845,7 +845,7 @@
 - `checkpoints.py` — API: 4 endpoints (~1047 tok)
 - `meta.py` — API: 4 endpoints (~467 tok)
 - `pipelines.py` — API: 3 endpoints (~973 tok)
-- `runs.py` — API: 13 endpoints (~5511 tok)
+- `runs.py` — API: 13 endpoints (~5647 tok)
 - `ui_canvas.py` — API: 1 endpoints (~4099 tok)
 
 ## devflow/core/
@@ -864,7 +864,7 @@
 
 ## devflow/services/
 
-- `git_integration.py` — inspect_repo, publish_run_changes (~3653 tok)
+- `git_integration.py` — inspect_repo, publish_run_changes (~4032 tok)
 - `repo_map.py` — detect_project_kinds, build_repo_context_summary (~8670 tok)
 - `repo_safety.py` — Detect whether a user-selected repo path is DevFlow's own source code. (~508 tok)
 - `source_apply.py` — Apply a generated patch to the source repo with a backup so it can be rolled back. (~2980 tok)
@@ -879,9 +879,9 @@
 - `ArtifactContentView.tsx` — isPatchFilename (~5446 tok)
 - `ArtifactViewer.tsx` — ArtifactViewer (~1582 tok)
 - `CheckpointModal.tsx` — PROVIDER_OPTIONS (~6394 tok)
-- `ConsoleView.tsx` — STATUS_LABEL (~7229 tok)
+- `ConsoleView.tsx` — STATUS_LABEL (~7344 tok)
 - `DetailView.tsx` — formatTimeShort (~8308 tok)
-- `GitIntegrationModal.tsx` — GitIntegrationModal (~5906 tok)
+- `GitIntegrationModal.tsx` — GitIntegrationModal (~6744 tok)
 - `OverviewView.tsx` — formatTime (~7584 tok)
 - `PipelineGraph.tsx` — formatDur (~2179 tok)
 - `SetupView.tsx` — AGENTS (~12378 tok)
@@ -899,7 +899,7 @@
 
 ## frontend/src/types/
 
-- `api.ts` — Exports Pipeline, PipelineCreate, Run, RunStatus + 17 more (~1443 tok)
+- `api.ts` — Exports Pipeline, PipelineCreate, Run, RunStatus + 17 more (~1550 tok)
 
 ## tests/
 

@@ -28,8 +28,8 @@
       "first_read": "2026-05-06T23:42:39.113Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx": {
-      "count": 8,
-      "tokens": 7126,
+      "count": 9,
+      "tokens": 7229,
       "first_read": "2026-05-06T23:42:39.684Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ArtifactContentView.tsx": {
@@ -278,8 +278,8 @@
       "first_read": "2026-05-07T01:33:01.800Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/services/git_integration.py": {
-      "count": 1,
-      "tokens": 0,
+      "count": 2,
+      "tokens": 3653,
       "first_read": "2026-05-07T01:44:20.653Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/services/source_apply.py": {
@@ -293,9 +293,19 @@
       "first_read": "2026-05-07T02:03:02.993Z"
     },
     "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/OverviewView.tsx": {
+      "count": 2,
+      "tokens": 7584,
+      "first_read": "2026-05-07T02:35:41.999Z"
+    },
+    "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/schemas/run.py": {
       "count": 1,
       "tokens": 0,
-      "first_read": "2026-05-07T02:35:41.999Z"
+      "first_read": "2026-05-07T02:48:34.759Z"
+    },
+    "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx": {
+      "count": 4,
+      "tokens": 6015,
+      "first_read": "2026-05-07T03:02:06.288Z"
     }
   },
   "files_written": [
@@ -1042,6 +1052,66 @@
       "action": "edit",
       "tokens": 103,
       "at": "2026-05-07T02:40:31.581Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/ConsoleView.tsx",
+      "action": "edit",
+      "tokens": 290,
+      "at": "2026-05-07T02:51:18.756Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/services/git_integration.py",
+      "action": "edit",
+      "tokens": 908,
+      "at": "2026-05-07T03:01:33.809Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/devflow/api/runs.py",
+      "action": "edit",
+      "tokens": 298,
+      "at": "2026-05-07T03:01:45.654Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/types/api.ts",
+      "action": "edit",
+      "tokens": 198,
+      "at": "2026-05-07T03:02:00.966Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx",
+      "action": "edit",
+      "tokens": 804,
+      "at": "2026-05-07T03:02:42.898Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx",
+      "action": "edit",
+      "tokens": 718,
+      "at": "2026-05-07T03:03:16.972Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx",
+      "action": "edit",
+      "tokens": 338,
+      "at": "2026-05-07T03:03:23.774Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx",
+      "action": "edit",
+      "tokens": 1097,
+      "at": "2026-05-07T03:03:59.330Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx",
+      "action": "edit",
+      "tokens": 105,
+      "at": "2026-05-07T03:04:30.845Z"
+    },
+    {
+      "file": "/Users/tish/Desktop/bytedance/Feishu_AI_Product_Manager/frontend/src/components/GitIntegrationModal.tsx",
+      "action": "edit",
+      "tokens": 102,
+      "at": "2026-05-07T03:04:34.680Z"
     }
   ],
   "edit_counts": {
@@ -1060,7 +1130,7 @@
     "devflow/agents/detailed_spec.py": 3,
     "tests/test_agent_contracts.py": 3,
     "devflow/core/orchestrator.py": 13,
-    "devflow/api/runs.py": 3,
+    "devflow/api/runs.py": 4,
     "frontend/src/lib/api.ts": 7,
     "frontend/src/components/DetailView.tsx": 4,
     "frontend/src/components/SetupView.tsx": 1,
@@ -1073,16 +1143,16 @@
     "devflow/agents/test_generation.py": 3,
     "devflow/agents/prompts/code_generation.py": 1,
     "frontend/src/components/PipelineGraph.tsx": 5,
-    "devflow/services/git_integration.py": 6,
-    "frontend/src/types/api.ts": 2,
-    "frontend/src/components/GitIntegrationModal.tsx": 4,
-    "frontend/src/components/ConsoleView.tsx": 10,
+    "devflow/services/git_integration.py": 7,
+    "frontend/src/types/api.ts": 3,
+    "frontend/src/components/GitIntegrationModal.tsx": 10,
+    "frontend/src/components/ConsoleView.tsx": 11,
     "tests/test_git_integration.py": 1,
     "frontend/src/components/OverviewView.tsx": 4
   },
-  "anatomy_hits": 21,
-  "anatomy_misses": 38,
-  "repeated_reads_warned": 23,
+  "anatomy_hits": 22,
+  "anatomy_misses": 39,
+  "repeated_reads_warned": 29,
   "cerebrum_warnings": 0,
-  "stop_count": 17
+  "stop_count": 19
 }

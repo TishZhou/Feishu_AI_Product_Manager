@@ -12,24 +12,36 @@ interface GitIntegrationModalProps {
   onClose: () => void
 }
 
-type Mode = 'commit' | 'push' | 'pr'
-
 export function GitIntegrationModal({ runId, onClose }: GitIntegrationModalProps) {
   const { data: status, isLoading, error } = useGitStatus(runId, true)
   const publish = useGitPublish()
-  const [mode, setMode] = useState<Mode>('pr')
+  // Three independent toggles — UI shows them as a checklist so the user can
+  // see exactly what's about to happen. "Create branch" is conceptually a
+  // toggle but always required (otherwise nothing to push), so it's rendered
+  // disabled-checked rather than backed by state.
+  const [doPush, setDoPush] = useState(true)
+  const [doPr, setDoPr] = useState(true)
   const [branchPrefix, setBranchPrefix] = useState('devflow')
   const [title, setTitle] = useState('')
 
-  // Default to "commit only" if there's no remote, "push" if remote but no PR cli.
+  // Adjust defaults once we know what's available:
+  //   no remote          → push & PR off
+  //   no PR cli for kind → PR off
   useEffect(() => {
     if (!status) return
-    if (!status.remote_url) setMode('commit')
-    else if ((status.remote_kind === 'github' && !status.has_gh_cli)
-          || (status.remote_kind === 'gitlab' && !status.has_glab_cli)) {
-      setMode('push')
+    if (!status.remote_url) {
+      setDoPush(false)
+      setDoPr(false)
+      return
+    }
+    if ((status.remote_kind === 'github' && !status.has_gh_cli)
+        || (status.remote_kind === 'gitlab' && !status.has_glab_cli)) {
+      setDoPr(false)
     }
   }, [status])
+
+  // PR requires push; if push is turned off, PR auto-turns off too.
+  useEffect(() => { if (!doPush) setDoPr(false) }, [doPush])
 
   // ESC closes
   useEffect(() => {
@@ -39,19 +51,35 @@ export function GitIntegrationModal({ runId, onClose }: GitIntegrationModalProps
   }, [onClose, publish.isPending])
 
   const result = publish.data as GitPublishResult | undefined
-  const RemoteIcon = Cloud  // lucide-react in this project doesn't ship the Github glyph; Cloud reads as "remote" generically
+  const RemoteIcon = Cloud
+
+  // PR availability per remote kind
+  const prAvailable =
+    !!status?.remote_url &&
+    ((status.remote_kind === 'github' && status.has_gh_cli)
+     || (status.remote_kind === 'gitlab' && status.has_glab_cli))
+  const prKindLabel = status?.remote_kind === 'gitlab' ? 'MR' : 'PR'
 
   const handleSubmit = () => {
     publish.mutate({
       runId,
       options: {
-        do_push: mode !== 'commit',
-        do_pr: mode === 'pr',
+        do_push: doPush,
+        do_pr: doPush && doPr,
         branch_prefix: branchPrefix.trim() || 'devflow',
         title: title.trim(),
       },
     })
   }
+
+  // Summarise what will happen, for the submit button label.
+  const submitLabel = (() => {
+    if (publish.isPending) return '执行中…'
+    const parts = ['新建分支', 'commit']
+    if (doPush) parts.push('推送')
+    if (doPush && doPr) parts.push(`创建 ${prKindLabel}`)
+    return parts.join(' · ')
+  })()
 
   return (
     <AnimatePresence>
@@ -193,54 +221,50 @@ export function GitIntegrationModal({ runId, onClose }: GitIntegrationModalProps
                     </Row>
                   )}
                   <Row label="工作区">
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontSize: 11.5, fontWeight: 500,
-                      color: status.working_tree_clean ? '#047857' : '#B45309',
-                    }}>
-                      <span style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: status.working_tree_clean ? '#10B981' : '#F59E0B',
-                      }} />
-                      {status.working_tree_clean ? '干净，可自动操作' : '有未提交改动，git 集成会被拒'}
-                    </span>
+                    <WorkingTreeStatus status={status} />
                   </Row>
                 </div>
 
-                {/* Mode selector */}
+                {/* Action checklist — explicit toggles */}
                 {!result && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--c-ink-600)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                      操作范围
+                      要做的操作
                     </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                      <ModeButton
-                        active={mode === 'commit'}
-                        onClick={() => setMode('commit')}
-                        icon={<GitBranch size={14} strokeWidth={1.9} />}
-                        title="仅本地提交"
-                        hint="新建分支并提交，不 push"
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', gap: 4,
+                      padding: '8px 4px', borderRadius: 10,
+                      background: 'white', border: '1px solid var(--c-line-2)',
+                    }}>
+                      <ToggleRow
+                        checked
+                        disabled
+                        onToggle={() => { /* always required */ }}
+                        title="新建分支并提交"
+                        hint="一定执行 — 否则不会留下任何 git 痕迹"
+                        icon={<GitBranch size={13} strokeWidth={2} />}
                       />
-                      <ModeButton
-                        active={mode === 'push'}
+                      <ToggleRow
+                        checked={doPush}
                         disabled={!status.remote_url}
-                        onClick={() => setMode('push')}
-                        icon={<Cloud size={14} strokeWidth={1.9} />}
-                        title="提交 + 推送"
-                        hint={status.remote_url ? '推送到 origin' : '需要 origin 远端'}
+                        onToggle={() => setDoPush(v => !v)}
+                        title="推送到远端 origin"
+                        hint={status.remote_url ? `→ ${status.remote_url}` : '没有 origin 远端，跳过'}
+                        icon={<Cloud size={13} strokeWidth={2} />}
                       />
-                      <ModeButton
-                        active={mode === 'pr'}
-                        disabled={!status.remote_url || (status.remote_kind === 'github' && !status.has_gh_cli) || (status.remote_kind === 'gitlab' && !status.has_glab_cli)}
-                        onClick={() => setMode('pr')}
-                        icon={<GitPullRequest size={14} strokeWidth={1.9} />}
-                        title={status.remote_kind === 'gitlab' ? '推送 + MR' : '推送 + PR'}
+                      <ToggleRow
+                        checked={doPr && doPush}
+                        disabled={!doPush || !prAvailable}
+                        onToggle={() => setDoPr(v => !v)}
+                        title={`创建 ${prKindLabel}（草稿）`}
                         hint={
+                          !doPush ? '需要先勾选"推送"' :
                           !status.remote_url ? '需要远端' :
-                          status.remote_kind === 'github' && !status.has_gh_cli ? '需要 gh CLI' :
+                          status.remote_kind === 'github' && !status.has_gh_cli ? '需要 gh CLI（macOS：brew install gh）' :
                           status.remote_kind === 'gitlab' && !status.has_glab_cli ? '需要 glab CLI' :
-                          status.remote_kind === 'gitlab' ? '通过 glab' : '通过 gh'
+                          status.remote_kind === 'gitlab' ? '通过 glab mr create --draft' : '通过 gh pr create --draft'
                         }
+                        icon={<GitPullRequest size={13} strokeWidth={2} />}
                       />
                     </div>
                   </div>
@@ -305,27 +329,23 @@ export function GitIntegrationModal({ runId, onClose }: GitIntegrationModalProps
             {!result && status?.is_git && (
               <button
                 onClick={handleSubmit}
-                disabled={publish.isPending || !status.working_tree_clean}
+                disabled={publish.isPending || !status.safe_to_publish}
                 style={{
                   padding: '9px 20px',
-                  background: publish.isPending || !status.working_tree_clean
+                  background: publish.isPending || !status.safe_to_publish
                     ? 'var(--c-ink-100)'
                     : 'linear-gradient(135deg, #2563EB, #1D4ED8)',
-                  color: publish.isPending || !status.working_tree_clean ? 'var(--c-ink-400)' : 'white',
+                  color: publish.isPending || !status.safe_to_publish ? 'var(--c-ink-400)' : 'white',
                   border: 'none', borderRadius: 9,
                   fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
-                  cursor: publish.isPending || !status.working_tree_clean ? 'not-allowed' : 'pointer',
+                  cursor: publish.isPending || !status.safe_to_publish ? 'not-allowed' : 'pointer',
                   display: 'inline-flex', alignItems: 'center', gap: 7,
-                  boxShadow: publish.isPending || !status.working_tree_clean ? 'none' : '0 4px 12px rgba(29,78,216,0.28)',
+                  boxShadow: publish.isPending || !status.safe_to_publish ? 'none' : '0 4px 12px rgba(29,78,216,0.28)',
                   transition: 'all 0.18s ease',
                 }}
               >
                 {publish.isPending && <Loader2 size={13} className="animate-spin" />}
-                {publish.isPending ? '执行中…' : (
-                  mode === 'commit' ? '建分支并提交' :
-                  mode === 'push' ? '提交并推送' :
-                  status?.remote_kind === 'gitlab' ? '推送并创建 MR' : '推送并创建 PR'
-                )}
+                {submitLabel}
               </button>
             )}
           </div>
@@ -369,12 +389,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function ModeButton({
-  active, disabled, onClick, icon, title, hint,
+function ToggleRow({
+  checked, disabled, onToggle, icon, title, hint,
 }: {
-  active: boolean
+  checked: boolean
   disabled?: boolean
-  onClick: () => void
+  onToggle: () => void
   icon: React.ReactNode
   title: string
   hint: string
@@ -383,34 +403,103 @@ function ModeButton({
     <button
       type="button"
       disabled={disabled}
-      onClick={onClick}
+      onClick={onToggle}
       style={{
-        padding: '11px 10px',
-        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4,
-        background: disabled ? 'var(--c-ink-50)' : active ? '#EFF6FF' : 'white',
-        border: `1.5px solid ${disabled ? 'var(--c-line)' : active ? '#60A5FA' : 'var(--c-line-2)'}`,
-        borderRadius: 10,
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '8px 12px',
+        background: 'transparent', border: 'none',
         cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
         opacity: disabled ? 0.55 : 1,
-        textAlign: 'left',
-        transition: 'all 0.15s ease',
+        textAlign: 'left', borderRadius: 8,
+        transition: 'background 0.12s ease',
       }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = 'var(--c-ink-50)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
     >
+      {/* Checkbox */}
       <span style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7,
-        fontSize: 12.5, fontWeight: active ? 600 : 500,
-        color: disabled ? 'var(--c-ink-400)' : active ? '#1D4ED8' : 'var(--c-ink-900)',
+        flexShrink: 0, width: 16, height: 16,
+        borderRadius: 4,
+        background: checked && !disabled ? '#2563EB' : 'white',
+        border: `1.5px solid ${checked && !disabled ? '#2563EB' : 'var(--c-ink-300)'}`,
+        display: 'grid', placeItems: 'center',
+        transition: 'all 0.12s ease',
+      }}>
+        {checked && (
+          <Check size={11} color="white" strokeWidth={3} />
+        )}
+      </span>
+      {/* Icon */}
+      <span style={{
+        flexShrink: 0,
+        color: disabled ? 'var(--c-ink-400)' : checked ? '#1D4ED8' : 'var(--c-ink-500)',
       }}>
         {icon}
-        {title}
       </span>
-      <span style={{
-        fontSize: 10.5, color: disabled ? 'var(--c-ink-400)' : active ? '#3B82F6' : 'var(--c-ink-500)',
-        lineHeight: 1.4,
-      }}>
-        {hint}
+      {/* Text */}
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <span style={{
+          fontSize: 13, fontWeight: 500,
+          color: disabled ? 'var(--c-ink-500)' : 'var(--c-ink-900)',
+        }}>
+          {title}
+        </span>
+        <span style={{
+          fontSize: 11, color: disabled ? 'var(--c-ink-400)' : 'var(--c-ink-500)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {hint}
+        </span>
       </span>
     </button>
+  )
+}
+
+function WorkingTreeStatus({ status }: { status: import('../types/api').GitStatus }) {
+  // Three states:
+  //   clean — green
+  //   dirty but matches this run's patch — green ("含 delivery 写入的本次改动")
+  //   dirty with unrelated files — amber, lists offending paths
+  if (status.working_tree_clean) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        fontSize: 11.5, fontWeight: 500, color: '#047857',
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
+        干净
+      </span>
+    )
+  }
+  if (status.dirty_matches_patch) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        fontSize: 11.5, fontWeight: 500, color: '#047857',
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981' }} />
+        含本次 delivery 写入的改动 ({status.dirty_paths.length} 个文件)，可以直接打成 commit
+      </span>
+    )
+  }
+  // dirty_unrelated
+  const extras = status.dirty_paths.filter(p => !status.patch_paths.includes(p))
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        fontSize: 11.5, fontWeight: 500, color: '#B45309',
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F59E0B' }} />
+        有不相关的本地改动，请先手动 commit 或 stash
+      </span>
+      {extras.length > 0 && (
+        <div className="mono" style={{ fontSize: 10.5, color: 'var(--c-ink-500)', paddingLeft: 12 }}>
+          {extras.slice(0, 3).map(p => <div key={p}>· {p}</div>)}
+          {extras.length > 3 && <div>· …还有 {extras.length - 3} 个</div>}
+        </div>
+      )}
+    </div>
   )
 }
 
