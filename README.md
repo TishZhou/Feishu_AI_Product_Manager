@@ -2,7 +2,7 @@
 
 > 输入一句需求，AI 自动走完从产品文档到代码交付的完整研发流程；只在两个产品决策点由人工把关。
 
-**ByteDance Competition** — Tish, Leander
+ — Tish, Leander
 
 ---
 
